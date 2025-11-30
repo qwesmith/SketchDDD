@@ -24,11 +24,16 @@
 //! | Context Map | Sketch morphism |
 
 pub mod context;
+pub mod diagnostics;
 pub mod mapping;
 pub mod sketch;
 pub mod validation;
 
 pub use context::{BoundedContext, Invariant};
+pub use diagnostics::{
+    available_options, did_you_mean, group_errors, suggest_similar, DiagnosticRenderer,
+    GroupedErrors, LocatedError, SourceSpan,
+};
 pub use mapping::{
     check_functorial_consistency, ContextMap, FunctorCheckResult, FunctorError, MorphismMapping,
     NamedContextMap, NamedMorphismMapping, NamedObjectMapping, ObjectMapping, RelationshipPattern,

@@ -13,6 +13,7 @@ categories = ["data-structures"]
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
+strsim = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
