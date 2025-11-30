@@ -51,6 +51,7 @@ Conventions:
 ### 2.3 Keywords
 
 Reserved keywords:
+
 ```
 context     map         objects     entity      value
 aggregate   enum        morphisms   invariant   equation
