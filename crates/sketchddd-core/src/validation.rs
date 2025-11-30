@@ -1000,6 +1000,11 @@ pub fn validate_context_map(
     if let (Some(source), Some(target)) = (source_ctx, target_ctx) {
         validate_object_mappings(context_map, source, target, &mut result);
         validate_morphism_mappings(context_map, source, target, &mut result);
+
+        // Advanced validations
+        validate_mapping_completeness(context_map, source, &mut result);
+        validate_identity_preservation(context_map, source, target, &mut result);
+        validate_relationship_pattern(context_map, source, target, &mut result);
     }
 
     result
@@ -1062,7 +1067,8 @@ fn validate_morphism_mappings(
 ) {
     for mapping in context_map.morphism_mappings() {
         // Check source morphism exists
-        if source_ctx.graph().find_morphism_by_name(&mapping.source).is_none() {
+        let source_morph = source_ctx.graph().find_morphism_by_name(&mapping.source);
+        if source_morph.is_none() {
             result.add(
                 ValidationError::error(
                     "E0064",
@@ -1081,7 +1087,8 @@ fn validate_morphism_mappings(
         }
 
         // Check target morphism exists
-        if target_ctx.graph().find_morphism_by_name(&mapping.target).is_none() {
+        let target_morph = target_ctx.graph().find_morphism_by_name(&mapping.target);
+        if target_morph.is_none() {
             result.add(
                 ValidationError::error(
                     "E0065",
@@ -1097,6 +1104,312 @@ fn validate_morphism_mappings(
                     context_map.target_context()
                 )),
             );
+        }
+
+        // E0066: Check functorial consistency - morphism endpoints must be mapped correctly
+        if let (Some(src_m), Some(tgt_m)) = (source_morph, target_morph) {
+            validate_morphism_endpoint_consistency(
+                context_map,
+                src_m,
+                tgt_m,
+                source_ctx,
+                target_ctx,
+                result,
+            );
+        }
+    }
+}
+
+/// Validate that morphism mapping preserves graph structure.
+/// For a morphism f: A -> B in source, F(f): F(A) -> F(B) in target.
+fn validate_morphism_endpoint_consistency(
+    context_map: &NamedContextMap,
+    source_morph: &crate::sketch::Morphism,
+    target_morph: &crate::sketch::Morphism,
+    source_ctx: &BoundedContext,
+    target_ctx: &BoundedContext,
+    result: &mut ValidationResult,
+) {
+    // Get source morphism's endpoints in source context
+    let src_source_obj = source_ctx.graph().get_object(source_morph.source);
+    let src_target_obj = source_ctx.graph().get_object(source_morph.target);
+
+    // Get target morphism's endpoints in target context
+    let tgt_source_obj = target_ctx.graph().get_object(target_morph.source);
+    let tgt_target_obj = target_ctx.graph().get_object(target_morph.target);
+
+    if let (Some(ss), Some(st), Some(ts), Some(tt)) =
+        (src_source_obj, src_target_obj, tgt_source_obj, tgt_target_obj)
+    {
+        // Check if source object mapping exists and matches
+        let expected_target_source = context_map
+            .object_mappings()
+            .iter()
+            .find(|m| m.source == ss.name)
+            .map(|m| m.target.as_str());
+
+        if let Some(expected) = expected_target_source {
+            if expected != ts.name {
+                result.add(
+                    ValidationError::error(
+                        "E0066",
+                        format!(
+                            "Context map '{}': morphism '{}' maps to '{}', but source object '{}' maps to '{}', not '{}'",
+                            context_map.name(),
+                            source_morph.name,
+                            target_morph.name,
+                            ss.name,
+                            expected,
+                            ts.name
+                        ),
+                    )
+                    .with_suggestion("Morphism mappings must preserve graph structure: F(f: A→B) should have F(A) as source"),
+                );
+            }
+        }
+
+        // Check if target object mapping exists and matches
+        let expected_target_target = context_map
+            .object_mappings()
+            .iter()
+            .find(|m| m.source == st.name)
+            .map(|m| m.target.as_str());
+
+        if let Some(expected) = expected_target_target {
+            if expected != tt.name {
+                result.add(
+                    ValidationError::error(
+                        "E0067",
+                        format!(
+                            "Context map '{}': morphism '{}' maps to '{}', but target object '{}' maps to '{}', not '{}'",
+                            context_map.name(),
+                            source_morph.name,
+                            target_morph.name,
+                            st.name,
+                            expected,
+                            tt.name
+                        ),
+                    )
+                    .with_suggestion("Morphism mappings must preserve graph structure: F(f: A→B) should have F(B) as target"),
+                );
+            }
+        }
+    }
+}
+
+/// Check for missing object mappings (warnings).
+fn validate_mapping_completeness(
+    context_map: &NamedContextMap,
+    source_ctx: &BoundedContext,
+    result: &mut ValidationResult,
+) {
+    // Build set of mapped source objects
+    let mapped_objects: HashSet<&str> = context_map
+        .object_mappings()
+        .iter()
+        .map(|m| m.source.as_str())
+        .collect();
+
+    // Build set of mapped source morphisms
+    let mapped_morphisms: HashSet<&str> = context_map
+        .morphism_mappings()
+        .iter()
+        .map(|m| m.source.as_str())
+        .collect();
+
+    // Count unmapped objects
+    let unmapped_objects: Vec<&str> = source_ctx
+        .graph()
+        .objects()
+        .filter(|o| !mapped_objects.contains(o.name.as_str()))
+        .map(|o| o.name.as_str())
+        .collect();
+
+    if !unmapped_objects.is_empty() {
+        let unmapped_list = if unmapped_objects.len() <= 5 {
+            unmapped_objects.join(", ")
+        } else {
+            format!(
+                "{}, ... ({} more)",
+                unmapped_objects[..5].join(", "),
+                unmapped_objects.len() - 5
+            )
+        };
+
+        result.add(
+            ValidationError::warning(
+                "W0130",
+                format!(
+                    "Context map '{}' has {} unmapped objects: {}",
+                    context_map.name(),
+                    unmapped_objects.len(),
+                    unmapped_list
+                ),
+            )
+            .with_suggestion("Consider mapping all objects for a complete context translation"),
+        );
+    }
+
+    // Count unmapped morphisms (excluding identity morphisms)
+    let unmapped_morphisms: Vec<&str> = source_ctx
+        .graph()
+        .morphisms()
+        .filter(|m| !m.is_identity && !mapped_morphisms.contains(m.name.as_str()))
+        .map(|m| m.name.as_str())
+        .collect();
+
+    if !unmapped_morphisms.is_empty() {
+        let unmapped_list = if unmapped_morphisms.len() <= 5 {
+            unmapped_morphisms.join(", ")
+        } else {
+            format!(
+                "{}, ... ({} more)",
+                unmapped_morphisms[..5].join(", "),
+                unmapped_morphisms.len() - 5
+            )
+        };
+
+        result.add(
+            ValidationError::warning(
+                "W0131",
+                format!(
+                    "Context map '{}' has {} unmapped morphisms: {}",
+                    context_map.name(),
+                    unmapped_morphisms.len(),
+                    unmapped_list
+                ),
+            )
+            .with_suggestion("Consider mapping morphisms to preserve relationships"),
+        );
+    }
+}
+
+/// Validate identity morphism preservation.
+/// For functorial mapping: F(id_X) = id_{F(X)}
+fn validate_identity_preservation(
+    context_map: &NamedContextMap,
+    source_ctx: &BoundedContext,
+    target_ctx: &BoundedContext,
+    result: &mut ValidationResult,
+) {
+    // For each object mapping, check if identity morphisms are mapped correctly
+    for obj_mapping in context_map.object_mappings() {
+        let source_obj = source_ctx.graph().find_object_by_name(&obj_mapping.source);
+        let target_obj = target_ctx.graph().find_object_by_name(&obj_mapping.target);
+
+        if let (Some(src_obj), Some(tgt_obj)) = (source_obj, target_obj) {
+            // Check if source has identity morphism
+            let src_identity = source_ctx.graph().get_identity_morphism(src_obj.id);
+            let tgt_identity = target_ctx.graph().get_identity_morphism(tgt_obj.id);
+
+            // If source has identity and target doesn't, warn
+            if src_identity.is_some() && tgt_identity.is_none() {
+                result.add(
+                    ValidationError::warning(
+                        "W0132",
+                        format!(
+                            "Context map '{}': object '{}' has identity morphism in source, but mapped target '{}' does not",
+                            context_map.name(),
+                            obj_mapping.source,
+                            obj_mapping.target
+                        ),
+                    )
+                    .with_suggestion("For functorial consistency, F(id_X) should equal id_{F(X)}"),
+                );
+            }
+        }
+    }
+}
+
+/// Validate relationship pattern-specific constraints.
+fn validate_relationship_pattern(
+    context_map: &NamedContextMap,
+    source_ctx: &BoundedContext,
+    target_ctx: &BoundedContext,
+    result: &mut ValidationResult,
+) {
+    use crate::mapping::RelationshipPattern;
+
+    match context_map.pattern() {
+        RelationshipPattern::SharedKernel => {
+            // Shared kernel: mappings should be bidirectional (same names usually)
+            // Just a hint for now
+            let non_identical: Vec<_> = context_map
+                .object_mappings()
+                .iter()
+                .filter(|m| m.source != m.target)
+                .collect();
+
+            if !non_identical.is_empty() {
+                result.add(ValidationError::warning(
+                    "W0133",
+                    format!(
+                        "Context map '{}' uses SharedKernel but has {} non-identical object names",
+                        context_map.name(),
+                        non_identical.len()
+                    ),
+                ));
+            }
+        }
+        RelationshipPattern::AntiCorruptionLayer => {
+            // ACL: should map all incoming types from upstream
+            let source_entities = source_ctx.entities().len();
+            let mapped_count = context_map.object_mappings().len();
+
+            if mapped_count == 0 && source_entities > 0 {
+                result.add(
+                    ValidationError::warning(
+                        "W0134",
+                        format!(
+                            "Context map '{}' is an AntiCorruptionLayer but has no object mappings",
+                            context_map.name()
+                        ),
+                    )
+                    .with_suggestion("ACL should translate upstream concepts to local representations"),
+                );
+            }
+        }
+        RelationshipPattern::OpenHostService => {
+            // OHS: should expose types to downstream
+            let target_entities = target_ctx.entities().len();
+            let mapped_count = context_map.object_mappings().len();
+
+            if mapped_count == 0 && target_entities > 0 {
+                result.add(
+                    ValidationError::warning(
+                        "W0135",
+                        format!(
+                            "Context map '{}' is an OpenHostService but has no object mappings",
+                            context_map.name()
+                        ),
+                    )
+                    .with_suggestion("OHS should expose domain types to downstream consumers"),
+                );
+            }
+        }
+        RelationshipPattern::Conformist => {
+            // Conformist: downstream adopts upstream model entirely
+            // Should map most/all objects
+            let source_objects: usize = source_ctx.graph().objects().count();
+            let mapped_count = context_map.object_mappings().len();
+
+            if source_objects > 0 && mapped_count < source_objects / 2 {
+                result.add(
+                    ValidationError::warning(
+                        "W0136",
+                        format!(
+                            "Context map '{}' is Conformist but only maps {}/{} objects from upstream",
+                            context_map.name(),
+                            mapped_count,
+                            source_objects
+                        ),
+                    )
+                    .with_suggestion("Conformist pattern implies adopting the upstream model largely as-is"),
+                );
+            }
+        }
+        _ => {
+            // No special constraints for other patterns
         }
     }
 }
@@ -1738,6 +2051,327 @@ mod tests {
         let result = validate_context_map(&context_map, &contexts);
         assert!(!result.is_ok());
         assert!(result.errors().any(|e| e.code == "E0065"));
+    }
+
+    #[test]
+    fn test_context_map_functorial_source_consistency() {
+        // Test E0066: morphism mapping source consistency
+        let mut commerce = BoundedContext::new("Commerce");
+        let customer = commerce.sketch_mut().add_object("Customer");
+        let order = commerce.sketch_mut().add_object("Order");
+        commerce.sketch_mut().graph.add_morphism("placedBy", order, customer);
+
+        let mut shipping = BoundedContext::new("Shipping");
+        let _shipment = shipping.sketch_mut().add_object("Shipment");
+        let recipient = shipping.sketch_mut().add_object("Recipient");
+        let other = shipping.sketch_mut().add_object("Other");
+        // Wrong source: Other -> Recipient instead of Shipment -> Recipient
+        shipping.sketch_mut().graph.add_morphism("assignedTo", other, recipient);
+
+        let mut context_map = NamedContextMap::new(
+            "CommerceToShipping",
+            "Commerce",
+            "Shipping",
+            RelationshipPattern::CustomerSupplier,
+        );
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Order".to_string(),
+            target: "Shipment".to_string(),
+            description: None,
+        });
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Customer".to_string(),
+            target: "Recipient".to_string(),
+            description: None,
+        });
+        // placedBy: Order -> Customer maps to assignedTo: Other -> Recipient
+        // This violates F(Order) = Shipment but assignedTo starts at Other
+        context_map.add_morphism_mapping(NamedMorphismMapping {
+            source: "placedBy".to_string(),
+            target: "assignedTo".to_string(),
+            description: None,
+        });
+
+        let contexts: HashMap<String, &BoundedContext> = [
+            ("Commerce".to_string(), &commerce),
+            ("Shipping".to_string(), &shipping),
+        ]
+        .into_iter()
+        .collect();
+
+        let result = validate_context_map(&context_map, &contexts);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0066"));
+    }
+
+    #[test]
+    fn test_context_map_functorial_target_consistency() {
+        // Test E0067: morphism mapping target consistency
+        let mut commerce = BoundedContext::new("Commerce");
+        let customer = commerce.sketch_mut().add_object("Customer");
+        let order = commerce.sketch_mut().add_object("Order");
+        commerce.sketch_mut().graph.add_morphism("placedBy", order, customer);
+
+        let mut shipping = BoundedContext::new("Shipping");
+        let shipment = shipping.sketch_mut().add_object("Shipment");
+        let _recipient = shipping.sketch_mut().add_object("Recipient");
+        let other = shipping.sketch_mut().add_object("Other");
+        // Wrong target: Shipment -> Other instead of Shipment -> Recipient
+        shipping.sketch_mut().graph.add_morphism("assignedTo", shipment, other);
+
+        let mut context_map = NamedContextMap::new(
+            "CommerceToShipping",
+            "Commerce",
+            "Shipping",
+            RelationshipPattern::CustomerSupplier,
+        );
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Order".to_string(),
+            target: "Shipment".to_string(),
+            description: None,
+        });
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Customer".to_string(),
+            target: "Recipient".to_string(),
+            description: None,
+        });
+        // placedBy: Order -> Customer maps to assignedTo: Shipment -> Other
+        // This violates F(Customer) = Recipient but assignedTo ends at Other
+        context_map.add_morphism_mapping(NamedMorphismMapping {
+            source: "placedBy".to_string(),
+            target: "assignedTo".to_string(),
+            description: None,
+        });
+
+        let contexts: HashMap<String, &BoundedContext> = [
+            ("Commerce".to_string(), &commerce),
+            ("Shipping".to_string(), &shipping),
+        ]
+        .into_iter()
+        .collect();
+
+        let result = validate_context_map(&context_map, &contexts);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0067"));
+    }
+
+    #[test]
+    fn test_context_map_unmapped_objects_warning() {
+        let mut commerce = BoundedContext::new("Commerce");
+        commerce.sketch_mut().add_object("Order");
+        commerce.sketch_mut().add_object("Customer");
+        commerce.sketch_mut().add_object("Product"); // Not mapped
+
+        let mut shipping = BoundedContext::new("Shipping");
+        shipping.sketch_mut().add_object("Shipment");
+
+        let mut context_map = NamedContextMap::new(
+            "CommerceToShipping",
+            "Commerce",
+            "Shipping",
+            RelationshipPattern::CustomerSupplier,
+        );
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Order".to_string(),
+            target: "Shipment".to_string(),
+            description: None,
+        });
+        // Customer and Product are not mapped
+
+        let contexts: HashMap<String, &BoundedContext> = [
+            ("Commerce".to_string(), &commerce),
+            ("Shipping".to_string(), &shipping),
+        ]
+        .into_iter()
+        .collect();
+
+        let result = validate_context_map(&context_map, &contexts);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0130"));
+    }
+
+    #[test]
+    fn test_context_map_unmapped_morphisms_warning() {
+        let mut commerce = BoundedContext::new("Commerce");
+        let customer = commerce.sketch_mut().add_object("Customer");
+        let order = commerce.sketch_mut().add_object("Order");
+        commerce.sketch_mut().graph.add_morphism("placedBy", order, customer);
+
+        let mut shipping = BoundedContext::new("Shipping");
+        shipping.sketch_mut().add_object("Shipment");
+        shipping.sketch_mut().add_object("Recipient");
+
+        let mut context_map = NamedContextMap::new(
+            "CommerceToShipping",
+            "Commerce",
+            "Shipping",
+            RelationshipPattern::CustomerSupplier,
+        );
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Order".to_string(),
+            target: "Shipment".to_string(),
+            description: None,
+        });
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Customer".to_string(),
+            target: "Recipient".to_string(),
+            description: None,
+        });
+        // placedBy morphism is not mapped
+
+        let contexts: HashMap<String, &BoundedContext> = [
+            ("Commerce".to_string(), &commerce),
+            ("Shipping".to_string(), &shipping),
+        ]
+        .into_iter()
+        .collect();
+
+        let result = validate_context_map(&context_map, &contexts);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0131"));
+    }
+
+    #[test]
+    fn test_context_map_shared_kernel_non_identical_warning() {
+        let mut context_a = BoundedContext::new("ContextA");
+        context_a.sketch_mut().add_object("Entity");
+
+        let mut context_b = BoundedContext::new("ContextB");
+        context_b.sketch_mut().add_object("DifferentName");
+
+        let mut context_map = NamedContextMap::new(
+            "SharedEntities",
+            "ContextA",
+            "ContextB",
+            RelationshipPattern::SharedKernel,
+        );
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Entity".to_string(),
+            target: "DifferentName".to_string(), // Non-identical
+            description: None,
+        });
+
+        let contexts: HashMap<String, &BoundedContext> = [
+            ("ContextA".to_string(), &context_a),
+            ("ContextB".to_string(), &context_b),
+        ]
+        .into_iter()
+        .collect();
+
+        let result = validate_context_map(&context_map, &contexts);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0133"));
+    }
+
+    #[test]
+    fn test_context_map_acl_no_mappings_warning() {
+        let mut upstream = BoundedContext::new("Upstream");
+        upstream.add_entity("ExternalEntity");
+
+        let downstream = BoundedContext::new("Downstream");
+
+        let context_map = NamedContextMap::new(
+            "ACL",
+            "Upstream",
+            "Downstream",
+            RelationshipPattern::AntiCorruptionLayer,
+        );
+        // No mappings!
+
+        let contexts: HashMap<String, &BoundedContext> = [
+            ("Upstream".to_string(), &upstream),
+            ("Downstream".to_string(), &downstream),
+        ]
+        .into_iter()
+        .collect();
+
+        let result = validate_context_map(&context_map, &contexts);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0134"));
+    }
+
+    #[test]
+    fn test_context_map_conformist_partial_mapping_warning() {
+        let mut upstream = BoundedContext::new("Upstream");
+        upstream.sketch_mut().add_object("Entity1");
+        upstream.sketch_mut().add_object("Entity2");
+        upstream.sketch_mut().add_object("Entity3");
+        upstream.sketch_mut().add_object("Entity4");
+
+        let mut downstream = BoundedContext::new("Downstream");
+        downstream.sketch_mut().add_object("LocalEntity");
+
+        let mut context_map = NamedContextMap::new(
+            "ConformistMap",
+            "Upstream",
+            "Downstream",
+            RelationshipPattern::Conformist,
+        );
+        // Only map 1 out of 4 entities (less than half)
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Entity1".to_string(),
+            target: "LocalEntity".to_string(),
+            description: None,
+        });
+
+        let contexts: HashMap<String, &BoundedContext> = [
+            ("Upstream".to_string(), &upstream),
+            ("Downstream".to_string(), &downstream),
+        ]
+        .into_iter()
+        .collect();
+
+        let result = validate_context_map(&context_map, &contexts);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0136"));
+    }
+
+    #[test]
+    fn test_valid_functorial_context_map() {
+        // Test that a properly functorial mapping has no errors
+        let mut commerce = BoundedContext::new("Commerce");
+        let customer = commerce.sketch_mut().add_object("Customer");
+        let order = commerce.sketch_mut().add_object("Order");
+        commerce.sketch_mut().graph.add_morphism("placedBy", order, customer);
+
+        let mut shipping = BoundedContext::new("Shipping");
+        let shipment = shipping.sketch_mut().add_object("Shipment");
+        let recipient = shipping.sketch_mut().add_object("Recipient");
+        // Correct structure: Shipment -> Recipient (matching Order -> Customer)
+        shipping.sketch_mut().graph.add_morphism("assignedTo", shipment, recipient);
+
+        let mut context_map = NamedContextMap::new(
+            "CommerceToShipping",
+            "Commerce",
+            "Shipping",
+            RelationshipPattern::CustomerSupplier,
+        );
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Order".to_string(),
+            target: "Shipment".to_string(),
+            description: None,
+        });
+        context_map.add_object_mapping(NamedObjectMapping {
+            source: "Customer".to_string(),
+            target: "Recipient".to_string(),
+            description: None,
+        });
+        context_map.add_morphism_mapping(NamedMorphismMapping {
+            source: "placedBy".to_string(),
+            target: "assignedTo".to_string(),
+            description: None,
+        });
+
+        let contexts: HashMap<String, &BoundedContext> = [
+            ("Commerce".to_string(), &commerce),
+            ("Shipping".to_string(), &shipping),
+        ]
+        .into_iter()
+        .collect();
+
+        let result = validate_context_map(&context_map, &contexts);
+        // Should pass (may have warnings but no errors)
+        assert!(result.is_ok(), "Errors: {:?}", result.errors().collect::<Vec<_>>());
     }
 
     // =============================================================
