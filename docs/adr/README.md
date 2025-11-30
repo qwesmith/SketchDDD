@@ -15,6 +15,10 @@ An Architecture Decision Record (ADR) is a document that captures an important a
 | [0002](0002-rust-for-core-engine.md) | Use Rust for Core Engine | Accepted |
 | [0003](0003-dual-interface-visual-and-text.md) | Dual Interface - Visual Builder and Text DSL | Accepted |
 | [0004](0004-visual-builder-frontend-framework.md) | Visual Builder Frontend Framework | Proposed |
+| [0005](0005-validation-error-code-conventions.md) | Validation Error Code Conventions | Accepted |
+| [0006](0006-dsl-syntax-design.md) | DSL Syntax Design | Accepted |
+| [0007](0007-file-extension-convention.md) | File Extension Convention (.sddd) | Accepted |
+| [0008](0008-code-generation-architecture.md) | Code Generation Architecture | Accepted |
 
 ## Proposed ADRs (To Be Written)
 
@@ -22,11 +26,9 @@ The following decisions need ADRs to be written during development:
 
 | Proposed ADR | Related Issues | Phase |
 |--------------|----------------|-------|
-| DSL Syntax Design | #5, #6 | Phase 1 |
-| Error Message Strategy | #7, #12 | Phase 1-2 |
+| Rich Error Messages | #12 | Phase 2 |
 | WASM API Design | #13 | Phase 3 |
 | State Management Strategy | #14, #22 | Phase 3-4 |
-| Code Generation Architecture | #23, #24, #25 | Phase 5 |
 | Template Format Specification | #19 | Phase 4 |
 
 ## How to Create an ADR
