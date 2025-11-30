@@ -34,4 +34,7 @@ pub use mapping::{
     NamedContextMap, NamedMorphismMapping, NamedObjectMapping, ObjectMapping, RelationshipPattern,
 };
 pub use sketch::Sketch;
-pub use validation::{ValidationError, ValidationResult};
+pub use validation::{
+    validate_context, validate_context_map, validate_model, validate_sketch, Severity,
+    SourceLocation, ValidationError, ValidationResult,
+};
