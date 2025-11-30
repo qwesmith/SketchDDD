@@ -11,7 +11,7 @@
 
 use crate::context::BoundedContext;
 use crate::mapping::NamedContextMap;
-use crate::sketch::{Graph, MorphismId, ObjectId, Path, PathEquation, Sketch};
+use crate::sketch::{Graph, ObjectId, Path, PathEquation, Sketch};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
@@ -229,6 +229,18 @@ pub fn validate_sketch(sketch: &Sketch) -> ValidationResult {
                 .with_suggestion("Consider splitting into smaller aggregates"),
             );
         }
+    }
+
+    // Validate limit cones (aggregates, value objects)
+    let limit_result = validate_limits(sketch);
+    for issue in limit_result.issues {
+        result.add(issue);
+    }
+
+    // Validate colimit cocones (enums, sum types)
+    let colimit_result = validate_colimits(sketch);
+    for issue in colimit_result.issues {
+        result.add(issue);
     }
 
     result
@@ -467,6 +479,322 @@ pub fn validate_equations(sketch: &Sketch) -> ValidationResult {
                 "W0102",
                 format!("Duplicate equation name: '{}'", equation.name),
             ));
+        }
+    }
+
+    result
+}
+
+// =============================================================
+// Limit/Colimit Validation
+// =============================================================
+
+use crate::sketch::{ColimitCocone, LimitCone};
+
+/// Validate a limit cone (aggregate or value object) for structural correctness.
+///
+/// This checks:
+/// - E0110: Apex object exists
+/// - E0111: Root object exists (for aggregates)
+/// - E0112: Root must equal apex or be in projections (for aggregates)
+/// - E0113: Projection morphism exists
+/// - E0114: Projection target object exists
+/// - E0115: Projection morphism source must be the apex
+/// - E0116: Projection morphism target must match projection target
+/// - E0117: Duplicate projection targets
+/// - W0110: Empty limit cone (no projections)
+/// - W0111: Aggregate without root
+pub fn validate_limit_cone(limit: &LimitCone, graph: &Graph) -> ValidationResult {
+    let mut result = ValidationResult::new();
+
+    // E0110: Check apex object exists
+    let apex_name = if let Some(obj) = graph.get_object(limit.apex) {
+        obj.name.clone()
+    } else {
+        result.add(ValidationError::error(
+            "E0110",
+            format!(
+                "Limit cone '{}' has apex that references non-existent object (id: {:?})",
+                limit.name, limit.apex
+            ),
+        ));
+        return result; // Can't continue without apex
+    };
+
+    // Aggregate-specific validations
+    if limit.is_aggregate {
+        if let Some(root_id) = limit.root {
+            // E0111: Check root object exists
+            if graph.get_object(root_id).is_none() {
+                result.add(ValidationError::error(
+                    "E0111",
+                    format!(
+                        "Aggregate '{}' has root that references non-existent object (id: {:?})",
+                        limit.name, root_id
+                    ),
+                ));
+            } else {
+                // E0112: Root must be the apex or reachable via projections
+                let root_is_apex = root_id == limit.apex;
+                let root_in_projections = limit.projections.iter().any(|p| p.target == root_id);
+
+                if !root_is_apex && !root_in_projections {
+                    result.add(
+                        ValidationError::error(
+                            "E0112",
+                            format!(
+                                "Aggregate '{}' root is neither the apex nor a projection target",
+                                limit.name
+                            ),
+                        )
+                        .with_suggestion("The root should be the apex object or one of the contained entities"),
+                    );
+                }
+            }
+        } else {
+            // W0111: Aggregate should have a root
+            result.add(
+                ValidationError::warning(
+                    "W0111",
+                    format!("Aggregate '{}' does not specify a root", limit.name),
+                )
+                .with_suggestion("Consider specifying a root entity for the aggregate"),
+            );
+        }
+    }
+
+    // W0110: Warn about empty limit cones
+    if limit.projections.is_empty() {
+        result.add(ValidationError::warning(
+            "W0110",
+            format!(
+                "Limit cone '{}' has no projections (empty {})",
+                limit.name,
+                if limit.is_aggregate { "aggregate" } else { "value object" }
+            ),
+        ));
+    }
+
+    // Track projection targets for duplicate detection
+    let mut seen_targets: HashSet<ObjectId> = HashSet::new();
+
+    // Validate each projection
+    for (i, projection) in limit.projections.iter().enumerate() {
+        // E0113: Check projection morphism exists
+        let morphism = match graph.get_morphism(projection.morphism) {
+            Some(m) => m,
+            None => {
+                result.add(ValidationError::error(
+                    "E0113",
+                    format!(
+                        "Limit cone '{}' projection {} references non-existent morphism (id: {:?})",
+                        limit.name, i, projection.morphism
+                    ),
+                ));
+                continue;
+            }
+        };
+
+        // E0114: Check projection target object exists
+        if graph.get_object(projection.target).is_none() {
+            result.add(ValidationError::error(
+                "E0114",
+                format!(
+                    "Limit cone '{}' projection '{}' references non-existent target object (id: {:?})",
+                    limit.name, morphism.name, projection.target
+                ),
+            ));
+        }
+
+        // E0115: Projection morphism source must be the apex
+        if morphism.source != limit.apex {
+            let morph_source_name = graph
+                .get_object(morphism.source)
+                .map(|o| o.name.as_str())
+                .unwrap_or("unknown");
+
+            result.add(
+                ValidationError::error(
+                    "E0115",
+                    format!(
+                        "Limit cone '{}' projection morphism '{}' has wrong source: expected '{}' (apex), found '{}'",
+                        limit.name, morphism.name, apex_name, morph_source_name
+                    ),
+                )
+                .with_suggestion("Projection morphisms must originate from the limit's apex"),
+            );
+        }
+
+        // E0116: Projection morphism target must match declared target
+        if morphism.target != projection.target {
+            let morph_target_name = graph
+                .get_object(morphism.target)
+                .map(|o| o.name.as_str())
+                .unwrap_or("unknown");
+            let declared_target_name = graph
+                .get_object(projection.target)
+                .map(|o| o.name.as_str())
+                .unwrap_or("unknown");
+
+            result.add(ValidationError::error(
+                "E0116",
+                format!(
+                    "Limit cone '{}' projection morphism '{}' targets '{}' but projection declares target '{}'",
+                    limit.name, morphism.name, morph_target_name, declared_target_name
+                ),
+            ));
+        }
+
+        // E0117: Check for duplicate projection targets
+        if !seen_targets.insert(projection.target) {
+            let target_name = graph
+                .get_object(projection.target)
+                .map(|o| o.name.as_str())
+                .unwrap_or("unknown");
+
+            result.add(
+                ValidationError::error(
+                    "E0117",
+                    format!(
+                        "Limit cone '{}' has duplicate projection to object '{}'",
+                        limit.name, target_name
+                    ),
+                )
+                .with_suggestion("Each component object should appear in at most one projection"),
+            );
+        }
+    }
+
+    result
+}
+
+/// Validate a colimit cocone (enum/sum type) for structural correctness.
+///
+/// This checks:
+/// - E0120: Apex object exists
+/// - E0121: Injection source object exists
+/// - E0122: Empty variant name
+/// - E0123: Duplicate variant names (handled elsewhere but included for completeness)
+/// - W0120: Empty colimit (no injections)
+/// - W0121: Single variant colimit (trivial sum type)
+pub fn validate_colimit_cocone(colimit: &ColimitCocone, graph: &Graph) -> ValidationResult {
+    let mut result = ValidationResult::new();
+
+    // E0120: Check apex object exists
+    if graph.get_object(colimit.apex).is_none() {
+        result.add(ValidationError::error(
+            "E0120",
+            format!(
+                "Colimit cocone '{}' has apex that references non-existent object (id: {:?})",
+                colimit.name, colimit.apex
+            ),
+        ));
+        return result; // Can't continue without apex
+    }
+
+    // W0120: Warn about empty colimits
+    if colimit.injections.is_empty() {
+        result.add(
+            ValidationError::warning(
+                "W0120",
+                format!("Colimit cocone '{}' has no injections (empty enum)", colimit.name),
+            )
+            .with_suggestion("Consider adding at least one variant to the enumeration"),
+        );
+    }
+
+    // W0121: Warn about single-variant colimits
+    if colimit.injections.len() == 1 {
+        result.add(ValidationError::warning(
+            "W0121",
+            format!(
+                "Colimit cocone '{}' has only one variant, which is a trivial sum type",
+                colimit.name
+            ),
+        ));
+    }
+
+    // Track variant names for duplicate detection
+    let mut seen_names: HashSet<&str> = HashSet::new();
+
+    // Validate each injection
+    for injection in &colimit.injections {
+        // E0121: Check injection source object exists
+        if graph.get_object(injection.source).is_none() {
+            result.add(ValidationError::error(
+                "E0121",
+                format!(
+                    "Colimit cocone '{}' variant '{}' references non-existent source object (id: {:?})",
+                    colimit.name, injection.name, injection.source
+                ),
+            ));
+        }
+
+        // E0122: Check variant name is not empty
+        if injection.name.trim().is_empty() {
+            result.add(ValidationError::error(
+                "E0122",
+                format!("Colimit cocone '{}' has a variant with an empty name", colimit.name),
+            ));
+        }
+
+        // E0123: Check for duplicate variant names
+        if !seen_names.insert(&injection.name) {
+            result.add(ValidationError::error(
+                "E0123",
+                format!(
+                    "Colimit cocone '{}' has duplicate variant name: '{}'",
+                    colimit.name, injection.name
+                ),
+            ));
+        }
+    }
+
+    result
+}
+
+/// Validate all limits in a sketch.
+pub fn validate_limits(sketch: &Sketch) -> ValidationResult {
+    let mut result = ValidationResult::new();
+
+    // Check for duplicate limit names
+    let mut seen_names: HashSet<&str> = HashSet::new();
+    for limit in &sketch.limits {
+        if !seen_names.insert(&limit.name) {
+            result.add(ValidationError::warning(
+                "W0112",
+                format!("Duplicate limit cone name: '{}'", limit.name),
+            ));
+        }
+
+        // Validate each limit cone
+        let limit_result = validate_limit_cone(limit, &sketch.graph);
+        for issue in limit_result.issues {
+            result.add(issue);
+        }
+    }
+
+    result
+}
+
+/// Validate all colimits in a sketch.
+pub fn validate_colimits(sketch: &Sketch) -> ValidationResult {
+    let mut result = ValidationResult::new();
+
+    // Check for duplicate colimit names
+    let mut seen_names: HashSet<&str> = HashSet::new();
+    for colimit in &sketch.colimits {
+        if !seen_names.insert(&colimit.name) {
+            result.add(ValidationError::warning(
+                "W0122",
+                format!("Duplicate colimit cocone name: '{}'", colimit.name),
+            ));
+        }
+
+        // Validate each colimit cocone
+        let colimit_result = validate_colimit_cocone(colimit, &sketch.graph);
+        for issue in colimit_result.issues {
+            result.add(issue);
         }
     }
 
@@ -837,6 +1165,7 @@ pub fn validate_model(
 mod tests {
     use super::*;
     use crate::mapping::{NamedObjectMapping, NamedMorphismMapping, RelationshipPattern};
+    use crate::sketch::MorphismId;
 
     // =============================================================
     // Sketch Validation Tests
@@ -1520,5 +1849,392 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(result.has_issues());
+    }
+
+    // =============================================================
+    // Limit Cone Validation Tests
+    // =============================================================
+
+    #[test]
+    fn test_valid_limit_cone_aggregate() {
+        let mut graph = crate::sketch::Graph::new();
+        let order = graph.add_object("Order");
+        let line_item = graph.add_object("LineItem");
+        let items = graph.add_morphism("items", order, line_item);
+
+        let mut limit = LimitCone::aggregate("OrderAggregate", order, order);
+        limit.add_projection(items, line_item);
+
+        let result = validate_limit_cone(&limit, &graph);
+        // Expect only warnings (W0110 is not triggered since we have projections)
+        assert!(result.is_ok(), "Errors: {:?}", result.errors().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_valid_limit_cone_value_object() {
+        let mut graph = crate::sketch::Graph::new();
+        let money = graph.add_object("Money");
+        let decimal = graph.add_object("Decimal");
+        let currency = graph.add_object("Currency");
+
+        let amount = graph.add_morphism("amount", money, decimal);
+        let currency_morph = graph.add_morphism("currency", money, currency);
+
+        let mut limit = LimitCone::value_object("Money", money);
+        limit.add_projection(amount, decimal);
+        limit.add_projection(currency_morph, currency);
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_limit_cone_non_existent_apex() {
+        let graph = crate::sketch::Graph::new();
+
+        let limit = LimitCone::aggregate("BadAggregate", ObjectId(999), ObjectId(999));
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0110"));
+    }
+
+    #[test]
+    fn test_limit_cone_non_existent_root() {
+        let mut graph = crate::sketch::Graph::new();
+        let order = graph.add_object("Order");
+
+        let limit = LimitCone::aggregate("BadAggregate", order, ObjectId(999));
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0111"));
+    }
+
+    #[test]
+    fn test_limit_cone_root_not_in_structure() {
+        let mut graph = crate::sketch::Graph::new();
+        let order = graph.add_object("Order");
+        let line_item = graph.add_object("LineItem");
+        let customer = graph.add_object("Customer"); // Not part of aggregate
+
+        let items = graph.add_morphism("items", order, line_item);
+
+        let mut limit = LimitCone::aggregate("BadAggregate", order, customer);
+        limit.add_projection(items, line_item);
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0112"));
+    }
+
+    #[test]
+    fn test_limit_cone_non_existent_projection_morphism() {
+        let mut graph = crate::sketch::Graph::new();
+        let order = graph.add_object("Order");
+        let line_item = graph.add_object("LineItem");
+
+        let mut limit = LimitCone::aggregate("BadAggregate", order, order);
+        limit.add_projection(MorphismId(999), line_item);
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0113"));
+    }
+
+    #[test]
+    fn test_limit_cone_non_existent_projection_target() {
+        let mut graph = crate::sketch::Graph::new();
+        let order = graph.add_object("Order");
+        let line_item = graph.add_object("LineItem");
+        let items = graph.add_morphism("items", order, line_item);
+
+        let mut limit = LimitCone::aggregate("BadAggregate", order, order);
+        limit.add_projection(items, ObjectId(999));
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0114"));
+    }
+
+    #[test]
+    fn test_limit_cone_projection_morphism_wrong_source() {
+        let mut graph = crate::sketch::Graph::new();
+        let order = graph.add_object("Order");
+        let line_item = graph.add_object("LineItem");
+        let customer = graph.add_object("Customer");
+
+        // Morphism from Customer, not Order
+        let wrong_morph = graph.add_morphism("wrong", customer, line_item);
+
+        let mut limit = LimitCone::aggregate("BadAggregate", order, order);
+        limit.add_projection(wrong_morph, line_item);
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0115"));
+    }
+
+    #[test]
+    fn test_limit_cone_projection_morphism_target_mismatch() {
+        let mut graph = crate::sketch::Graph::new();
+        let order = graph.add_object("Order");
+        let line_item = graph.add_object("LineItem");
+        let product = graph.add_object("Product");
+
+        // Morphism goes to LineItem, but projection says Product
+        let items = graph.add_morphism("items", order, line_item);
+
+        let mut limit = LimitCone::aggregate("BadAggregate", order, order);
+        limit.add_projection(items, product); // Mismatch!
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0116"));
+    }
+
+    #[test]
+    fn test_limit_cone_duplicate_projection_targets() {
+        let mut graph = crate::sketch::Graph::new();
+        let order = graph.add_object("Order");
+        let line_item = graph.add_object("LineItem");
+
+        let items1 = graph.add_morphism("items1", order, line_item);
+        let items2 = graph.add_morphism("items2", order, line_item);
+
+        let mut limit = LimitCone::aggregate("BadAggregate", order, order);
+        limit.add_projection(items1, line_item);
+        limit.add_projection(items2, line_item); // Duplicate target!
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0117"));
+    }
+
+    #[test]
+    fn test_limit_cone_empty_warning() {
+        let mut graph = crate::sketch::Graph::new();
+        let order = graph.add_object("Order");
+
+        let limit = LimitCone::aggregate("EmptyAggregate", order, order);
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0110"));
+    }
+
+    #[test]
+    fn test_limit_cone_aggregate_without_root_warning() {
+        let mut graph = crate::sketch::Graph::new();
+        let order = graph.add_object("Order");
+
+        // Create aggregate without root using the raw struct
+        let limit = LimitCone {
+            name: "NoRootAggregate".to_string(),
+            apex: order,
+            projections: Vec::new(),
+            is_aggregate: true,
+            root: None,
+        };
+
+        let result = validate_limit_cone(&limit, &graph);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0111"));
+    }
+
+    #[test]
+    fn test_validate_limits_duplicate_names_warning() {
+        let mut sketch = Sketch::new("Test");
+        let order = sketch.add_object("Order");
+
+        // Add two limits with the same name
+        let limit1 = LimitCone::aggregate("MyAggregate", order, order);
+        let limit2 = LimitCone::aggregate("MyAggregate", order, order);
+
+        sketch.limits.push(limit1);
+        sketch.limits.push(limit2);
+
+        let result = validate_limits(&sketch);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0112"));
+    }
+
+    // =============================================================
+    // Colimit Cocone Validation Tests
+    // =============================================================
+
+    #[test]
+    fn test_valid_colimit_cocone() {
+        let mut graph = crate::sketch::Graph::new();
+        let order_status = graph.add_object("OrderStatus");
+
+        let colimit = ColimitCocone::enumeration(
+            "OrderStatus",
+            order_status,
+            vec!["Pending".into(), "Confirmed".into(), "Shipped".into()],
+        );
+
+        let result = validate_colimit_cocone(&colimit, &graph);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_colimit_cocone_non_existent_apex() {
+        let graph = crate::sketch::Graph::new();
+
+        let colimit = ColimitCocone::new("BadEnum", ObjectId(999));
+
+        let result = validate_colimit_cocone(&colimit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0120"));
+    }
+
+    #[test]
+    fn test_colimit_cocone_non_existent_injection_source() {
+        let mut graph = crate::sketch::Graph::new();
+        let order_status = graph.add_object("OrderStatus");
+
+        let mut colimit = ColimitCocone::new("BadEnum", order_status);
+        colimit.add_variant("BadVariant", ObjectId(999));
+
+        let result = validate_colimit_cocone(&colimit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0121"));
+    }
+
+    #[test]
+    fn test_colimit_cocone_empty_variant_name() {
+        let mut graph = crate::sketch::Graph::new();
+        let order_status = graph.add_object("OrderStatus");
+
+        let mut colimit = ColimitCocone::new("BadEnum", order_status);
+        colimit.add_variant("", order_status);
+
+        let result = validate_colimit_cocone(&colimit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0122"));
+    }
+
+    #[test]
+    fn test_colimit_cocone_duplicate_variant_names() {
+        let mut graph = crate::sketch::Graph::new();
+        let order_status = graph.add_object("OrderStatus");
+
+        let mut colimit = ColimitCocone::new("BadEnum", order_status);
+        colimit.add_variant("Pending", order_status);
+        colimit.add_variant("Pending", order_status); // Duplicate!
+
+        let result = validate_colimit_cocone(&colimit, &graph);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0123"));
+    }
+
+    #[test]
+    fn test_colimit_cocone_empty_warning() {
+        let mut graph = crate::sketch::Graph::new();
+        let order_status = graph.add_object("OrderStatus");
+
+        let colimit = ColimitCocone::new("EmptyEnum", order_status);
+
+        let result = validate_colimit_cocone(&colimit, &graph);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0120"));
+    }
+
+    #[test]
+    fn test_colimit_cocone_single_variant_warning() {
+        let mut graph = crate::sketch::Graph::new();
+        let order_status = graph.add_object("OrderStatus");
+
+        let colimit = ColimitCocone::enumeration(
+            "SingleEnum",
+            order_status,
+            vec!["OnlyOne".into()],
+        );
+
+        let result = validate_colimit_cocone(&colimit, &graph);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0121"));
+    }
+
+    #[test]
+    fn test_validate_colimits_duplicate_names_warning() {
+        let mut sketch = Sketch::new("Test");
+        let order_status = sketch.add_object("OrderStatus");
+
+        // Add two colimits with the same name
+        let colimit1 = ColimitCocone::enumeration(
+            "Status",
+            order_status,
+            vec!["A".into(), "B".into()],
+        );
+        let colimit2 = ColimitCocone::enumeration(
+            "Status",
+            order_status,
+            vec!["X".into(), "Y".into()],
+        );
+
+        sketch.colimits.push(colimit1);
+        sketch.colimits.push(colimit2);
+
+        let result = validate_colimits(&sketch);
+        assert!(result.is_ok()); // Warnings don't fail
+        assert!(result.warnings().any(|e| e.code == "W0122"));
+    }
+
+    #[test]
+    fn test_sketch_validation_includes_limit_colimit() {
+        let mut sketch = Sketch::new("Commerce");
+        let order = sketch.add_object("Order");
+        let line_item = sketch.add_object("LineItem");
+        let items = sketch.graph.add_morphism("items", order, line_item);
+
+        // Add valid aggregate
+        let mut aggregate = LimitCone::aggregate("OrderAggregate", order, order);
+        aggregate.add_projection(items, line_item);
+        sketch.limits.push(aggregate);
+
+        // Add valid enum
+        let order_status = sketch.add_object("OrderStatus");
+        let status_enum = ColimitCocone::enumeration(
+            "OrderStatus",
+            order_status,
+            vec!["Pending".into(), "Shipped".into()],
+        );
+        sketch.colimits.push(status_enum);
+
+        let result = validate_sketch(&sketch);
+        assert!(result.is_ok(), "Errors: {:?}", result.errors().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_sketch_validation_catches_invalid_limit() {
+        let mut sketch = Sketch::new("Commerce");
+        let order = sketch.add_object("Order");
+
+        // Add limit with non-existent projection morphism
+        let mut bad_limit = LimitCone::aggregate("BadAggregate", order, order);
+        bad_limit.add_projection(MorphismId(999), ObjectId(888));
+        sketch.limits.push(bad_limit);
+
+        let result = validate_sketch(&sketch);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0113"));
+    }
+
+    #[test]
+    fn test_sketch_validation_catches_invalid_colimit() {
+        let mut sketch = Sketch::new("Commerce");
+        let order_status = sketch.add_object("OrderStatus");
+
+        // Add colimit with duplicate variant names
+        let mut bad_colimit = ColimitCocone::new("BadEnum", order_status);
+        bad_colimit.add_variant("Dup", order_status);
+        bad_colimit.add_variant("Dup", order_status);
+        sketch.colimits.push(bad_colimit);
+
+        let result = validate_sketch(&sketch);
+        assert!(!result.is_ok());
+        assert!(result.errors().any(|e| e.code == "E0123"));
     }
 }
