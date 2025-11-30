@@ -1,10 +1,49 @@
 // SketchDDD Grammar
-// A domain-specific language for domain-driven design
+// A domain-specific language for domain-driven design with category theory semantics
+//
+// DSL Syntax Overview:
+// ```sketchddd
+// context Commerce {
+//   objects { Customer, Order, LineItem }
+//
+//   morphisms {
+//     placedBy: Order -> Customer
+//     items: Order -> List<LineItem>
+//   }
+//
+//   aggregate Order {
+//     root: Order
+//     contains: [LineItem]
+//     invariant: totalPrice = sum(items.price)
+//   }
+//
+//   value Money {
+//     amount: Decimal
+//     currency: Currency
+//   }
+//
+//   enum OrderStatus = Pending | Confirmed | Shipped
+// }
+//
+// map CommerceToShipping: Commerce -> Shipping {
+//   pattern: CustomerSupplier
+//   mappings {
+//     Order -> Shipment
+//     Customer -> Recipient
+//   }
+// }
+// ```
 
+// =============================================================
 // Top-level file structure
-file = { SOI ~ context_decl* ~ map_decl* ~ EOI }
+// =============================================================
 
+file = { SOI ~ (context_decl | map_decl)* ~ EOI }
+
+// =============================================================
 // Context declaration
+// =============================================================
+
 context_decl = {
     "context" ~ identifier ~ "{" ~
         context_body ~
@@ -12,24 +51,53 @@ context_decl = {
 }
 
 context_body = {
-    (objects_block | morphisms_block | aggregate_block | value_block | enum_block)*
+    (objects_block | morphisms_block | aggregate_block | value_block | enum_block | entity_block | equation_block)*
 }
 
-// Objects block
+// =============================================================
+// Objects block - declares domain concepts
+// =============================================================
+
 objects_block = {
-    "objects" ~ "{" ~ identifier_list ~ "}"
+    "objects" ~ "{" ~ identifier_list? ~ "}"
 }
 
-// Morphisms block
+// =============================================================
+// Entity block - declares entities with identity
+// =============================================================
+
+entity_block = {
+    "entity" ~ identifier ~ ("{" ~ entity_body ~ "}")?
+}
+
+entity_body = {
+    field_decl*
+}
+
+// =============================================================
+// Morphisms block - declares relationships between objects
+// =============================================================
+
 morphisms_block = {
     "morphisms" ~ "{" ~ morphism_decl* ~ "}"
 }
 
 morphism_decl = {
-    identifier ~ ":" ~ type_expr ~ "->" ~ type_expr
+    identifier ~ ":" ~ type_expr ~ "->" ~ type_expr ~ morphism_annotations?
 }
 
-// Aggregate block
+morphism_annotations = {
+    "[" ~ annotation ~ ("," ~ annotation)* ~ "]"
+}
+
+annotation = {
+    identifier ~ ("=" ~ (identifier | string_literal | number))?
+}
+
+// =============================================================
+// Aggregate block - defines aggregate roots with invariants
+// =============================================================
+
 aggregate_block = {
     "aggregate" ~ identifier ~ "{" ~
         aggregate_body ~
@@ -37,43 +105,95 @@ aggregate_block = {
 }
 
 aggregate_body = {
-    ("root" ~ ":" ~ identifier)? ~
-    ("contains" ~ ":" ~ "[" ~ identifier_list ~ "]")? ~
-    ("invariant" ~ ":" ~ expression)*
+    (root_clause | contains_clause | invariant_clause)*
 }
 
-// Value object block
+root_clause = {
+    "root" ~ ":" ~ identifier
+}
+
+contains_clause = {
+    "contains" ~ ":" ~ "[" ~ identifier_list ~ "]"
+}
+
+invariant_clause = {
+    "invariant" ~ ":" ~ expression
+}
+
+// =============================================================
+// Value object block - defines value objects (structural equality)
+// =============================================================
+
 value_block = {
     "value" ~ identifier ~ "{" ~
         field_decl* ~
     "}"
 }
 
-// Enum block
+// =============================================================
+// Enum block - defines sum types / enumerations
+// =============================================================
+
 enum_block = {
     "enum" ~ identifier ~ "=" ~ variant_list
 }
 
-// Field declaration
+variant_list = {
+    variant ~ ("|" ~ variant)*
+}
+
+variant = {
+    identifier ~ variant_payload?
+}
+
+variant_payload = {
+    "(" ~ type_expr_list ~ ")"
+}
+
+type_expr_list = {
+    type_expr ~ ("," ~ type_expr)*
+}
+
+// =============================================================
+// Equation block - defines path equations (business rules)
+// =============================================================
+
+equation_block = {
+    "equation" ~ identifier? ~ ":" ~ path ~ "=" ~ path
+}
+
+path = {
+    identifier ~ ("." ~ identifier)*
+}
+
+// =============================================================
+// Field declaration (for value objects and entities)
+// =============================================================
+
 field_decl = {
     identifier ~ ":" ~ type_expr
 }
 
+// =============================================================
 // Type expressions
+// =============================================================
+
 type_expr = {
-    generic_type | identifier
+    (generic_type | simple_type) ~ "?"?
+}
+
+simple_type = @{
+    identifier
 }
 
 generic_type = {
-    identifier ~ "<" ~ type_expr ~ ">"
+    identifier ~ "<" ~ type_expr_list ~ ">"
 }
 
-// Variant list for enums
-variant_list = {
-    identifier ~ ("|" ~ identifier)*
-}
+// =============================================================
+// Context map declaration - sketch morphisms between contexts
+// =============================================================
 
-// Context map declaration
 map_decl = {
     "map" ~ identifier ~ ":" ~ identifier ~ "->" ~ identifier ~ "{" ~
         map_body ~
@@ -81,8 +201,11 @@ map_decl = {
 }
 
 map_body = {
-    ("pattern" ~ ":" ~ map_pattern)? ~
-    ("mappings" ~ "{" ~ mapping_decl* ~ "}")?
+    (pattern_clause | mappings_block | morphism_mappings_block)*
+}
+
+pattern_clause = {
+    "pattern" ~ ":" ~ map_pattern
 }
 
 map_pattern = {
@@ -90,38 +213,124 @@ map_pattern = {
     "CustomerSupplier" |
     "Conformist" |
     "AntiCorruptionLayer" |
+    "ACL" |  // Alias for AntiCorruptionLayer
     "SeparateWays" |
     "PublishedLanguage" |
     "OpenHostService" |
+    "OHS" |  // Alias for OpenHostService
     "SharedKernel"
 }
 
-mapping_decl = {
-    identifier ~ "->" ~ identifier
+mappings_block = {
+    "mappings" ~ "{" ~ object_mapping_decl* ~ "}"
 }
 
+object_mapping_decl = {
+    identifier ~ "->" ~ identifier ~ mapping_description?
+}
+
+morphism_mappings_block = {
+    "morphism_mappings" ~ "{" ~ morphism_mapping_decl* ~ "}"
+}
+
+morphism_mapping_decl = {
+    identifier ~ "->" ~ identifier ~ mapping_description?
+}
+
+mapping_description = {
+    ":" ~ string_literal
+}
+
+// =============================================================
 // Expression (for invariants and equations)
+// =============================================================
+
 expression = {
-    term ~ (operator ~ term)*
+    comparison_expr
 }
 
-term = {
-    identifier | number | "(" ~ expression ~ ")"
+comparison_expr = {
+    additive_expr ~ (comparison_op ~ additive_expr)?
 }
 
-operator = {
-    "=" | "+" | "-" | "*" | "/" | "." | "sum" | "map"
+additive_expr = {
+    multiplicative_expr ~ (additive_op ~ multiplicative_expr)*
 }
 
+multiplicative_expr = {
+    unary_expr ~ (multiplicative_op ~ unary_expr)*
+}
+
+unary_expr = {
+    unary_op? ~ postfix_expr
+}
+
+postfix_expr = {
+    primary_expr ~ postfix_op*
+}
+
+primary_expr = {
+    function_call | path_expr | number | string_literal | "(" ~ expression ~ ")"
+}
+
+path_expr = {
+    identifier ~ ("." ~ identifier)*
+}
+
+function_call = {
+    identifier ~ "(" ~ arg_list? ~ ")"
+}
+
+arg_list = {
+    expression ~ ("," ~ expression)*
+}
+
+// Operators
+comparison_op = { "==" | "!=" | "<=" | ">=" | "<" | ">" | "=" }
+additive_op = { "+" | "-" }
+multiplicative_op = { "*" | "/" | "%" }
+unary_op = { "!" | "-" }
+postfix_op = { "." ~ identifier | "[" ~ expression ~ "]" }
+
+// =============================================================
 // Identifier list
+// =============================================================
+
 identifier_list = {
     identifier ~ ("," ~ identifier)*
 }
 
+// =============================================================
 // Basic tokens
-identifier = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
-number = @{ ASCII_DIGIT+ }
+// =============================================================
 
+identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+
+number = @{
+    ("-")? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)?
+}
+
+string_literal = @{
+    "\"" ~ string_content ~ "\""
+}
+
+string_content = @{
+    (!"\"" ~ !"\\n" ~ ANY | "\\" ~ ANY)*
+}
+
+// =============================================================
 // Whitespace and comments
+// =============================================================
+
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
-COMMENT = _{ "//" ~ (!"\n" ~ ANY)* | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// Single-line comment: // ...
+line_comment = _{ "//" ~ (!"\n" ~ ANY)* }
+
+// Multi-line comment: /* ... */
+block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// Doc comment: /// ...
+doc_comment = { "///" ~ (!"\n" ~ ANY)* }
+
+COMMENT = _{ line_comment | block_comment }
