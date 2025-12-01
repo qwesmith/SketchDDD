@@ -387,12 +387,16 @@ fn test_check_with_context_map() {
 // =============================================================
 
 #[test]
-fn test_codegen_stub() {
+fn test_codegen_rust() {
     let temp_dir = tempfile::tempdir().unwrap();
     let file_path = temp_dir.path().join("codegen.sddd");
 
     fs::write(&file_path, r#"
         context Test {
+            entity Order {
+                id: UUID
+                status: String
+            }
         }
     "#).unwrap();
 
@@ -400,16 +404,39 @@ fn test_codegen_stub() {
     cmd.args(["codegen", file_path.to_str().unwrap()]);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("not yet implemented"));
+        .stdout(predicate::str::contains("Generating"))
+        .stdout(predicate::str::contains("Generated from"));
 }
 
 #[test]
-fn test_viz_stub() {
+fn test_codegen_typescript() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file_path = temp_dir.path().join("codegen.sddd");
+
+    fs::write(&file_path, r#"
+        context Test {
+            entity Order {
+                id: UUID
+            }
+        }
+    "#).unwrap();
+
+    let mut cmd = sketchddd();
+    cmd.args(["codegen", file_path.to_str().unwrap(), "--target", "typescript"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Generating"))
+        .stdout(predicate::str::contains("Generated from"));
+}
+
+#[test]
+fn test_viz_mermaid() {
     let temp_dir = tempfile::tempdir().unwrap();
     let file_path = temp_dir.path().join("viz.sddd");
 
     fs::write(&file_path, r#"
         context Test {
+            objects { A, B }
         }
     "#).unwrap();
 
@@ -417,7 +444,27 @@ fn test_viz_stub() {
     cmd.args(["viz", file_path.to_str().unwrap()]);
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("not yet implemented"));
+        .stdout(predicate::str::contains("Visualizing"))
+        .stdout(predicate::str::contains("mermaid"));
+}
+
+#[test]
+fn test_viz_graphviz() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file_path = temp_dir.path().join("viz.sddd");
+
+    fs::write(&file_path, r#"
+        context Test {
+            objects { A, B }
+        }
+    "#).unwrap();
+
+    let mut cmd = sketchddd();
+    cmd.args(["viz", file_path.to_str().unwrap(), "--format", "graphviz"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Visualizing"))
+        .stdout(predicate::str::contains("digraph"));
 }
 
 #[test]
@@ -457,4 +504,142 @@ fn test_diff_stub() {
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("not yet implemented"));
+}
+
+// =============================================================
+// Template Command Tests
+// =============================================================
+
+#[test]
+fn test_template_list() {
+    let mut cmd = sketchddd();
+    cmd.args(["template", "list"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Built-in"))
+        .stdout(predicate::str::contains("minimal"))
+        .stdout(predicate::str::contains("ecommerce"))
+        .stdout(predicate::str::contains("microservices"));
+}
+
+#[test]
+fn test_template_info_minimal() {
+    let mut cmd = sketchddd();
+    cmd.args(["template", "info", "minimal"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Template: minimal"))
+        .stdout(predicate::str::contains("Built-in"));
+}
+
+#[test]
+fn test_template_info_ecommerce() {
+    let mut cmd = sketchddd();
+    cmd.args(["template", "info", "ecommerce"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Template: ecommerce"))
+        .stdout(predicate::str::contains("Customer"));
+}
+
+#[test]
+fn test_template_info_not_found() {
+    let mut cmd = sketchddd();
+    cmd.args(["template", "info", "nonexistent"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("not found"));
+}
+
+#[test]
+fn test_template_validate() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let template_dir = temp_dir.path().join("test-template");
+    fs::create_dir_all(&template_dir).unwrap();
+
+    // Create a valid template
+    fs::write(template_dir.join("template.json"), r#"{"name": "test", "description": "Test template"}"#).unwrap();
+    fs::write(template_dir.join("test.sddd"), "context Test {}").unwrap();
+
+    let mut cmd = sketchddd();
+    cmd.args(["template", "validate", template_dir.to_str().unwrap()]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Template is valid"));
+}
+
+#[test]
+fn test_template_create() {
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let mut cmd = sketchddd();
+    cmd.current_dir(temp_dir.path());
+    cmd.args(["template", "create", "mytemplate"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("Created template"))
+        .stdout(predicate::str::contains("template.json"))
+        .stdout(predicate::str::contains(".sddd"));
+
+    // Verify files were created
+    assert!(temp_dir.path().join("mytemplate").join("template.json").exists());
+    assert!(temp_dir.path().join("mytemplate").join("mytemplate.sddd").exists());
+}
+
+#[test]
+fn test_template_remove_builtin() {
+    let mut cmd = sketchddd();
+    cmd.args(["template", "remove", "minimal", "--force"]);
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("Cannot remove built-in"));
+}
+
+// =============================================================
+// Update Command Tests
+// =============================================================
+
+#[test]
+fn test_update_check() {
+    let mut cmd = sketchddd();
+    cmd.args(["update", "--check"]);
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("SketchDDD"))
+        .stdout(predicate::str::contains("Checking for updates"));
+}
+
+// =============================================================
+// Auto-detection Tests
+// =============================================================
+
+#[test]
+fn test_auto_detect_sddd() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let file_path = temp_dir.path().join("project.sddd");
+
+    fs::write(&file_path, r#"
+        context Project {
+            objects { A, B }
+        }
+    "#).unwrap();
+
+    let mut cmd = sketchddd();
+    cmd.current_dir(temp_dir.path());
+    // No subcommand or file specified - should auto-detect and run check
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("No issues found"));
+}
+
+#[test]
+fn test_auto_detect_no_sddd() {
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let mut cmd = sketchddd();
+    cmd.current_dir(temp_dir.path());
+    // No .sddd file - should error
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("No .sddd file found"));
 }

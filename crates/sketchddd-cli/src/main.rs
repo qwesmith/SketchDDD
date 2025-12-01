@@ -5,6 +5,7 @@
 
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::Colorize;
+use sketchddd_codegen::Target;
 use sketchddd_core::{validate_model, Severity, ValidationError};
 use sketchddd_parser::{parse_file, transform};
 use std::path::PathBuf;
@@ -30,15 +31,19 @@ struct Cli {
     verbosity: Verbosity,
 
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
+
+    /// Path to .sddd file (auto-detected if not using subcommand)
+    #[arg(global = true)]
+    file: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
     /// Validate a SketchDDD model file
     Check {
-        /// Path to the .sddd or .sketch file
-        file: PathBuf,
+        /// Path to the .sddd or .sketch file (optional if .sddd file in current dir)
+        file: Option<PathBuf>,
 
         /// Output format for errors
         #[arg(short, long, default_value = "pretty")]
@@ -47,22 +52,22 @@ enum Commands {
 
     /// Generate code from a SketchDDD model
     Codegen {
-        /// Path to the .sddd or .sketch file
-        file: PathBuf,
+        /// Path to the .sddd or .sketch file (optional if .sddd file in current dir)
+        file: Option<PathBuf>,
 
-        /// Target language (rust, typescript, kotlin)
+        /// Target language (rust, typescript, kotlin, python, java, clojure, haskell)
         #[arg(short, long, default_value = "rust")]
         target: String,
 
-        /// Output directory
+        /// Output directory or file
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
 
     /// Generate visualizations from a SketchDDD model
     Viz {
-        /// Path to the .sddd or .sketch file
-        file: PathBuf,
+        /// Path to the .sddd or .sketch file (optional if .sddd file in current dir)
+        file: Option<PathBuf>,
 
         /// Output format (graphviz, mermaid)
         #[arg(short, long, default_value = "mermaid")]
@@ -92,8 +97,8 @@ enum Commands {
 
     /// Export model to JSON format
     Export {
-        /// Path to the .sddd or .sketch file
-        file: PathBuf,
+        /// Path to the .sddd or .sketch file (optional if .sddd file in current dir)
+        file: Option<PathBuf>,
 
         /// Output file
         #[arg(short, long)]
@@ -118,33 +123,199 @@ enum Commands {
         /// Second .sddd or .sketch file
         new: PathBuf,
     },
+
+    /// Manage templates
+    #[command(subcommand)]
+    Template(TemplateCommands),
+
+    /// Check for updates
+    Update {
+        /// Only check, don't install
+        #[arg(long)]
+        check: bool,
+    },
+}
+
+/// Template subcommands
+#[derive(Subcommand)]
+enum TemplateCommands {
+    /// List available templates
+    List {
+        /// Include templates from remote registry
+        #[arg(long)]
+        remote: bool,
+    },
+
+    /// Show detailed information about a template
+    Info {
+        /// Template name
+        name: String,
+    },
+
+    /// Validate a template
+    Validate {
+        /// Path to template directory or file
+        path: PathBuf,
+    },
+
+    /// Install a template from registry or URL
+    Install {
+        /// Template name or URL
+        source: String,
+
+        /// Force reinstall if already exists
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Update an installed template
+    #[command(name = "update")]
+    UpdateTemplate {
+        /// Template name (or 'all' for all templates)
+        name: String,
+    },
+
+    /// Remove an installed template
+    Remove {
+        /// Template name
+        name: String,
+
+        /// Don't ask for confirmation
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Create a new template from an existing model
+    Create {
+        /// Template name
+        name: String,
+
+        /// Source .sddd file to use as template
+        #[arg(short, long)]
+        source: Option<PathBuf>,
+
+        /// Output directory for the template
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Check { file, format } => cmd_check(&file, &format, cli.verbosity),
-        Commands::Codegen {
+        Some(Commands::Check { file, format }) => {
+            match resolve_sddd_file(file) {
+                Ok(file) => cmd_check(&file, &format, cli.verbosity),
+                Err(e) => Err(e),
+            }
+        }
+        Some(Commands::Codegen {
             file,
             target,
             output,
-        } => cmd_codegen(&file, &target, output, cli.verbosity),
-        Commands::Viz {
+        }) => {
+            match resolve_sddd_file(file) {
+                Ok(file) => cmd_codegen(&file, &target, output, cli.verbosity),
+                Err(e) => Err(e),
+            }
+        }
+        Some(Commands::Viz {
             file,
             format,
             output,
-        } => cmd_viz(&file, &format, output, cli.verbosity),
-        Commands::Init { name, template } => cmd_init(&name, &template, cli.verbosity),
-        Commands::Serve { port } => cmd_serve(port, cli.verbosity),
-        Commands::Export { file, output } => cmd_export(&file, output, cli.verbosity),
-        Commands::Import { file, output } => cmd_import(&file, output, cli.verbosity),
-        Commands::Diff { old, new } => cmd_diff(&old, &new, cli.verbosity),
+        }) => {
+            match resolve_sddd_file(file) {
+                Ok(file) => cmd_viz(&file, &format, output, cli.verbosity),
+                Err(e) => Err(e),
+            }
+        }
+        Some(Commands::Init { name, template }) => cmd_init(&name, &template, cli.verbosity),
+        Some(Commands::Serve { port }) => cmd_serve(port, cli.verbosity),
+        Some(Commands::Export { file, output }) => {
+            match resolve_sddd_file(file) {
+                Ok(file) => cmd_export(&file, output, cli.verbosity),
+                Err(e) => Err(e),
+            }
+        }
+        Some(Commands::Import { file, output }) => cmd_import(&file, output, cli.verbosity),
+        Some(Commands::Diff { old, new }) => cmd_diff(&old, &new, cli.verbosity),
+        Some(Commands::Template(subcmd)) => cmd_template(subcmd, cli.verbosity),
+        Some(Commands::Update { check }) => cmd_update(check, cli.verbosity),
+        None => {
+            // Auto-detect .sddd file and run check
+            match resolve_sddd_file(cli.file) {
+                Ok(file) => cmd_check(&file, "pretty", cli.verbosity),
+                Err(e) => Err(e),
+            }
+        }
     };
 
     if let Err(e) = result {
         eprintln!("{}: {}", "error".red().bold(), e);
         std::process::exit(1);
+    }
+}
+
+/// Resolve .sddd file path, auto-detecting if not provided
+fn resolve_sddd_file(file: Option<PathBuf>) -> Result<PathBuf, String> {
+    match file {
+        Some(f) => Ok(f),
+        None => auto_detect_sddd_file(),
+    }
+}
+
+/// Auto-detect .sddd file in current directory
+fn auto_detect_sddd_file() -> Result<PathBuf, String> {
+    let current_dir = std::env::current_dir()
+        .map_err(|e| format!("Failed to get current directory: {}", e))?;
+
+    // Look for .sddd files in current directory
+    let entries = std::fs::read_dir(&current_dir)
+        .map_err(|e| format!("Failed to read directory: {}", e))?;
+
+    let sddd_files: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .map(|ext| ext == "sddd" || ext == "sketch")
+                .unwrap_or(false)
+        })
+        .collect();
+
+    match sddd_files.len() {
+        0 => Err("No .sddd file found in current directory. Specify a file path or run 'sketchddd init' to create one.".to_string()),
+        1 => Ok(sddd_files.into_iter().next().unwrap()),
+        _ => {
+            // Multiple files found - prefer one matching directory name
+            let dir_name = current_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+
+            let matching = sddd_files.iter().find(|p| {
+                p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.eq_ignore_ascii_case(dir_name))
+                    .unwrap_or(false)
+            });
+
+            match matching {
+                Some(f) => Ok(f.clone()),
+                None => {
+                    let names: Vec<_> = sddd_files
+                        .iter()
+                        .filter_map(|p| p.file_name())
+                        .filter_map(|n| n.to_str())
+                        .collect();
+                    Err(format!(
+                        "Multiple .sddd files found: {}. Please specify which file to use.",
+                        names.join(", ")
+                    ))
+                }
+            }
+        }
     }
 }
 
@@ -300,12 +471,56 @@ fn cmd_codegen(
         );
     }
 
-    // TODO: Implement full codegen
-    let _ = output;
-    println!(
-        "{} Code generation not yet implemented",
-        "⚠".yellow().bold()
-    );
+    // Read and parse file
+    let source =
+        std::fs::read_to_string(file).map_err(|e| format!("Failed to read file: {}", e))?;
+    let ast = parse_file(&source).map_err(|e| format!("Parse error: {}", e))?;
+    let transform_result = transform(&ast).map_err(|e| format!("Transform error: {}", e))?;
+
+    // Parse target language
+    let target_enum: Target = target
+        .parse()
+        .map_err(|_| format!("Unknown target language: {}. Supported: rust, typescript, kotlin, python, java, clojure, haskell", target))?;
+
+    // Generate code for each context
+    for context in &transform_result.contexts {
+        let code = sketchddd_codegen::generate(context, target_enum)
+            .map_err(|e| format!("Code generation error: {}", e))?;
+
+        // Determine output path
+        let output_path = match &output {
+            Some(dir) if dir.is_dir() => {
+                let ext = match target_enum {
+                    Target::Rust => "rs",
+                    Target::TypeScript => "ts",
+                    Target::Kotlin => "kt",
+                    Target::Python => "py",
+                    Target::Java => "java",
+                    Target::Clojure => "clj",
+                    Target::Haskell => "hs",
+                };
+                dir.join(format!("{}.{}", to_snake_case(context.name()), ext))
+            }
+            Some(path) => path.clone(),
+            None => {
+                // Output to stdout
+                println!("{}", code);
+                continue;
+            }
+        };
+
+        std::fs::write(&output_path, &code)
+            .map_err(|e| format!("Failed to write output: {}", e))?;
+
+        if verbosity != Verbosity::Quiet {
+            println!(
+                "  {} Generated {}",
+                "✓".green().bold(),
+                output_path.display()
+            );
+        }
+    }
+
     Ok(())
 }
 
@@ -324,12 +539,36 @@ fn cmd_viz(
         );
     }
 
-    // TODO: Implement full viz
-    let _ = output;
-    println!(
-        "{} Visualization not yet implemented",
-        "⚠".yellow().bold()
-    );
+    // Read and parse file
+    let source =
+        std::fs::read_to_string(file).map_err(|e| format!("Failed to read file: {}", e))?;
+    let ast = parse_file(&source).map_err(|e| format!("Parse error: {}", e))?;
+    let transform_result = transform(&ast).map_err(|e| format!("Transform error: {}", e))?;
+
+    // Generate visualization for each context
+    for context in &transform_result.contexts {
+        let viz = match format {
+            "graphviz" | "dot" => sketchddd_viz::graphviz::generate(context)
+                .map_err(|e| format!("Visualization error: {}", e))?,
+            "mermaid" | "md" => sketchddd_viz::mermaid::generate(context)
+                .map_err(|e| format!("Visualization error: {}", e))?,
+            _ => return Err(format!("Unknown visualization format: {}. Supported: graphviz, mermaid", format)),
+        };
+
+        match &output {
+            Some(path) => {
+                std::fs::write(path, &viz)
+                    .map_err(|e| format!("Failed to write output: {}", e))?;
+                if verbosity != Verbosity::Quiet {
+                    println!("  {} Generated {}", "✓".green().bold(), path.display());
+                }
+            }
+            None => {
+                println!("{}", viz);
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -717,4 +956,538 @@ fn cmd_diff(old: &PathBuf, new: &PathBuf, verbosity: Verbosity) -> Result<(), St
     }
     println!("{} Diff not yet implemented", "⚠".yellow().bold());
     Ok(())
+}
+
+/// Handle template subcommands
+fn cmd_template(cmd: TemplateCommands, verbosity: Verbosity) -> Result<(), String> {
+    match cmd {
+        TemplateCommands::List { remote } => cmd_template_list(remote, verbosity),
+        TemplateCommands::Info { name } => cmd_template_info(&name, verbosity),
+        TemplateCommands::Validate { path } => cmd_template_validate(&path, verbosity),
+        TemplateCommands::Install { source, force } => cmd_template_install(&source, force, verbosity),
+        TemplateCommands::UpdateTemplate { name } => cmd_template_update(&name, verbosity),
+        TemplateCommands::Remove { name, force } => cmd_template_remove(&name, force, verbosity),
+        TemplateCommands::Create { name, source, output } => cmd_template_create(&name, source, output, verbosity),
+    }
+}
+
+/// Get templates directory
+fn get_templates_dir() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let templates_dir = home.join(".sketchddd").join("templates");
+    Ok(templates_dir)
+}
+
+/// List available templates
+fn cmd_template_list(remote: bool, verbosity: Verbosity) -> Result<(), String> {
+    if verbosity != Verbosity::Quiet {
+        println!("{}", "Available Templates".cyan().bold());
+        println!();
+    }
+
+    // Built-in templates
+    println!("{}", "Built-in:".blue().bold());
+    println!("  {} - Empty project with example comments", "minimal".green());
+    println!("  {} - E-commerce domain with orders, products, customers", "ecommerce".green());
+    println!("  {} - Multi-context architecture with context maps", "microservices".green());
+    println!();
+
+    // Installed templates
+    let templates_dir = get_templates_dir()?;
+    if templates_dir.exists() {
+        let entries: Vec<_> = std::fs::read_dir(&templates_dir)
+            .map_err(|e| format!("Failed to read templates directory: {}", e))?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .collect();
+
+        if !entries.is_empty() {
+            println!("{}", "Installed:".blue().bold());
+            for entry in entries {
+                let name = entry.file_name().to_string_lossy().to_string();
+                let desc = read_template_description(&entry.path()).unwrap_or_default();
+                if desc.is_empty() {
+                    println!("  {}", name.green());
+                } else {
+                    println!("  {} - {}", name.green(), desc);
+                }
+            }
+            println!();
+        }
+    }
+
+    // Remote templates (if --remote flag is set)
+    if remote {
+        println!("{}", "Remote Registry:".blue().bold());
+        println!("  {} Fetching from registry...", "→".blue());
+        // TODO: Implement actual registry fetch
+        println!("  {} Registry not yet available", "⚠".yellow());
+        println!();
+    }
+
+    Ok(())
+}
+
+/// Read template description from manifest
+fn read_template_description(path: &PathBuf) -> Option<String> {
+    let manifest = path.join("template.json");
+    if manifest.exists() {
+        if let Ok(content) = std::fs::read_to_string(&manifest) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                return json.get("description").and_then(|d| d.as_str()).map(|s| s.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Show template info
+fn cmd_template_info(name: &str, verbosity: Verbosity) -> Result<(), String> {
+    let _ = verbosity;
+
+    // Check built-in templates
+    match name {
+        "minimal" => {
+            println!("{}", "Template: minimal".cyan().bold());
+            println!();
+            println!("{}: Built-in", "Source".blue());
+            println!("{}: Empty project with commented examples", "Description".blue());
+            println!("{}: Single bounded context structure", "Contents".blue());
+            println!();
+            println!("Usage: sketchddd init <project-name> --template minimal");
+        }
+        "ecommerce" => {
+            println!("{}", "Template: ecommerce".cyan().bold());
+            println!();
+            println!("{}: Built-in", "Source".blue());
+            println!("{}: E-commerce domain model", "Description".blue());
+            println!("{}", "Contents:".blue());
+            println!("  - Customer, Order, Product entities");
+            println!("  - Money, Address value objects");
+            println!("  - OrderAggregate with LineItems");
+            println!("  - OrderStatus, PaymentStatus enums");
+            println!();
+            println!("Usage: sketchddd init <project-name> --template ecommerce");
+        }
+        "microservices" => {
+            println!("{}", "Template: microservices".cyan().bold());
+            println!();
+            println!("{}: Built-in", "Source".blue());
+            println!("{}: Multi-context microservices architecture", "Description".blue());
+            println!("{}", "Contents:".blue());
+            println!("  - Orders context");
+            println!("  - Inventory context");
+            println!("  - Shipping context");
+            println!("  - Context maps with CustomerSupplier pattern");
+            println!();
+            println!("Usage: sketchddd init <project-name> --template microservices");
+        }
+        _ => {
+            // Check installed templates
+            let templates_dir = get_templates_dir()?;
+            let template_path = templates_dir.join(name);
+
+            if template_path.exists() {
+                let manifest_path = template_path.join("template.json");
+                if manifest_path.exists() {
+                    let content = std::fs::read_to_string(&manifest_path)
+                        .map_err(|e| format!("Failed to read manifest: {}", e))?;
+                    let json: serde_json::Value = serde_json::from_str(&content)
+                        .map_err(|e| format!("Invalid manifest JSON: {}", e))?;
+
+                    println!("{}", format!("Template: {}", name).cyan().bold());
+                    println!();
+
+                    if let Some(desc) = json.get("description").and_then(|d| d.as_str()) {
+                        println!("{}: {}", "Description".blue(), desc);
+                    }
+                    if let Some(author) = json.get("author").and_then(|a| a.as_str()) {
+                        println!("{}: {}", "Author".blue(), author);
+                    }
+                    if let Some(version) = json.get("version").and_then(|v| v.as_str()) {
+                        println!("{}: {}", "Version".blue(), version);
+                    }
+                } else {
+                    println!("{}", format!("Template: {}", name).cyan().bold());
+                    println!("{}: Installed (no manifest)", "Source".blue());
+                }
+            } else {
+                return Err(format!("Template '{}' not found", name));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate a template
+fn cmd_template_validate(path: &PathBuf, verbosity: Verbosity) -> Result<(), String> {
+    if verbosity != Verbosity::Quiet {
+        println!("{} {}", "Validating template".cyan().bold(), path.display());
+    }
+
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+
+    // Check if path exists
+    if !path.exists() {
+        return Err(format!("Path does not exist: {}", path.display()));
+    }
+
+    // Check for template.json manifest
+    let manifest_path = if path.is_dir() {
+        path.join("template.json")
+    } else {
+        path.with_file_name("template.json")
+    };
+
+    if !manifest_path.exists() {
+        warnings.push("Missing template.json manifest (recommended)".to_string());
+    } else {
+        // Validate manifest
+        let content = std::fs::read_to_string(&manifest_path)
+            .map_err(|e| format!("Failed to read manifest: {}", e))?;
+
+        match serde_json::from_str::<serde_json::Value>(&content) {
+            Ok(json) => {
+                if json.get("name").is_none() {
+                    errors.push("Manifest missing 'name' field".to_string());
+                }
+                if json.get("description").is_none() {
+                    warnings.push("Manifest missing 'description' field".to_string());
+                }
+            }
+            Err(e) => {
+                errors.push(format!("Invalid manifest JSON: {}", e));
+            }
+        }
+    }
+
+    // Check for .sddd template file
+    let sddd_files: Vec<_> = if path.is_dir() {
+        std::fs::read_dir(path)
+            .map_err(|e| format!("Failed to read directory: {}", e))?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "sddd")
+                    .unwrap_or(false)
+            })
+            .collect()
+    } else if path.extension().map(|e| e == "sddd").unwrap_or(false) {
+        vec![]  // Single file is the template
+    } else {
+        vec![]
+    };
+
+    if path.is_dir() && sddd_files.is_empty() {
+        errors.push("No .sddd files found in template directory".to_string());
+    }
+
+    // Validate any .sddd files
+    let files_to_check: Vec<PathBuf> = if path.is_dir() {
+        sddd_files.into_iter().map(|e| e.path()).collect()
+    } else {
+        vec![path.clone()]
+    };
+
+    for file in files_to_check {
+        if let Ok(content) = std::fs::read_to_string(&file) {
+            if let Err(e) = parse_file(&content) {
+                errors.push(format!("{}: Parse error - {}", file.display(), e));
+            }
+        }
+    }
+
+    // Report results
+    if verbosity != Verbosity::Quiet {
+        for warning in &warnings {
+            println!("  {} {}", "warning:".yellow().bold(), warning);
+        }
+        for error in &errors {
+            println!("  {} {}", "error:".red().bold(), error);
+        }
+    }
+
+    if errors.is_empty() {
+        if verbosity != Verbosity::Quiet {
+            println!("{} Template is valid", "✓".green().bold());
+        }
+        Ok(())
+    } else {
+        Err(format!("Template validation failed with {} error(s)", errors.len()))
+    }
+}
+
+/// Install a template
+fn cmd_template_install(source: &str, force: bool, verbosity: Verbosity) -> Result<(), String> {
+    if verbosity != Verbosity::Quiet {
+        println!("{} {}", "Installing template".cyan().bold(), source);
+    }
+
+    let templates_dir = get_templates_dir()?;
+    std::fs::create_dir_all(&templates_dir)
+        .map_err(|e| format!("Failed to create templates directory: {}", e))?;
+
+    // Determine if source is URL or local path
+    if source.starts_with("http://") || source.starts_with("https://") {
+        // TODO: Implement URL download
+        println!("{} URL installation not yet implemented", "⚠".yellow().bold());
+        return Ok(());
+    }
+
+    // Local path
+    let source_path = PathBuf::from(source);
+    if !source_path.exists() {
+        return Err(format!("Source path does not exist: {}", source));
+    }
+
+    // Get template name
+    let name = source_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or("Invalid source path")?;
+
+    let dest_path = templates_dir.join(name);
+
+    if dest_path.exists() && !force {
+        return Err(format!(
+            "Template '{}' already exists. Use --force to overwrite.",
+            name
+        ));
+    }
+
+    // Copy template
+    if source_path.is_dir() {
+        copy_dir_recursive(&source_path, &dest_path)?;
+    } else {
+        std::fs::create_dir_all(&dest_path)
+            .map_err(|e| format!("Failed to create template directory: {}", e))?;
+        std::fs::copy(&source_path, dest_path.join(source_path.file_name().unwrap()))
+            .map_err(|e| format!("Failed to copy template: {}", e))?;
+    }
+
+    if verbosity != Verbosity::Quiet {
+        println!("{} Installed template '{}'", "✓".green().bold(), name);
+    }
+
+    Ok(())
+}
+
+/// Recursively copy a directory
+fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    for entry in std::fs::read_dir(src).map_err(|e| format!("Failed to read directory: {}", e))? {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            std::fs::copy(&src_path, &dst_path)
+                .map_err(|e| format!("Failed to copy file: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Update a template
+fn cmd_template_update(name: &str, verbosity: Verbosity) -> Result<(), String> {
+    if verbosity != Verbosity::Quiet {
+        println!("{} {}", "Updating template".cyan().bold(), name);
+    }
+
+    if name == "all" {
+        println!("{} Updating all templates...", "→".blue());
+        // TODO: Implement update all
+        println!("{} Template updates not yet implemented", "⚠".yellow().bold());
+    } else {
+        let templates_dir = get_templates_dir()?;
+        let template_path = templates_dir.join(name);
+
+        if !template_path.exists() {
+            return Err(format!("Template '{}' is not installed", name));
+        }
+
+        // TODO: Check registry for updates and download
+        println!("{} Template updates not yet implemented", "⚠".yellow().bold());
+    }
+
+    Ok(())
+}
+
+/// Remove a template
+fn cmd_template_remove(name: &str, force: bool, verbosity: Verbosity) -> Result<(), String> {
+    // Check for built-in templates
+    if matches!(name, "minimal" | "ecommerce" | "microservices") {
+        return Err(format!("Cannot remove built-in template '{}'", name));
+    }
+
+    let templates_dir = get_templates_dir()?;
+    let template_path = templates_dir.join(name);
+
+    if !template_path.exists() {
+        return Err(format!("Template '{}' is not installed", name));
+    }
+
+    if !force {
+        println!(
+            "{} Remove template '{}'? This cannot be undone. [y/N]",
+            "?".yellow().bold(),
+            name
+        );
+
+        let mut input = String::new();
+        std::io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| format!("Failed to read input: {}", e))?;
+
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Cancelled.");
+            return Ok(());
+        }
+    }
+
+    std::fs::remove_dir_all(&template_path)
+        .map_err(|e| format!("Failed to remove template: {}", e))?;
+
+    if verbosity != Verbosity::Quiet {
+        println!("{} Removed template '{}'", "✓".green().bold(), name);
+    }
+
+    Ok(())
+}
+
+/// Create a new template
+fn cmd_template_create(
+    name: &str,
+    source: Option<PathBuf>,
+    output: Option<PathBuf>,
+    verbosity: Verbosity,
+) -> Result<(), String> {
+    if verbosity != Verbosity::Quiet {
+        println!("{} {}", "Creating template".cyan().bold(), name);
+    }
+
+    // Determine output directory
+    let output_dir = output.unwrap_or_else(|| PathBuf::from(name));
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    // Create template manifest
+    let manifest = serde_json::json!({
+        "name": name,
+        "version": "1.0.0",
+        "description": format!("{} domain model template", name),
+        "author": "",
+        "license": "MIT",
+        "sketchddd": ">=0.1.0"
+    });
+
+    std::fs::write(
+        output_dir.join("template.json"),
+        serde_json::to_string_pretty(&manifest).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write manifest: {}", e))?;
+
+    // Copy or create template .sddd file
+    let sddd_content = if let Some(source_path) = source {
+        std::fs::read_to_string(&source_path)
+            .map_err(|e| format!("Failed to read source file: {}", e))?
+    } else {
+        get_minimal_template(name)
+    };
+
+    std::fs::write(output_dir.join(format!("{}.sddd", name.to_lowercase())), sddd_content)
+        .map_err(|e| format!("Failed to write template file: {}", e))?;
+
+    // Create README
+    let readme = format!(
+        r#"# {} Template
+
+A SketchDDD domain model template.
+
+## Usage
+
+```bash
+sketchddd init my-project --template {}
+```
+
+## Contents
+
+- `{}.sddd` - Main domain model file
+- `template.json` - Template metadata
+
+## License
+
+MIT
+"#,
+        name, name, name.to_lowercase()
+    );
+
+    std::fs::write(output_dir.join("README.md"), readme)
+        .map_err(|e| format!("Failed to write README: {}", e))?;
+
+    if verbosity != Verbosity::Quiet {
+        println!("{} Created template in {}/", "✓".green().bold(), output_dir.display());
+        println!("  {} template.json", "→".blue());
+        println!("  {} {}.sddd", "→".blue(), name.to_lowercase());
+        println!("  {} README.md", "→".blue());
+    }
+
+    Ok(())
+}
+
+/// Check for updates
+fn cmd_update(check_only: bool, verbosity: Verbosity) -> Result<(), String> {
+    let current_version = env!("CARGO_PKG_VERSION");
+
+    if verbosity != Verbosity::Quiet {
+        println!("{} version {}", "SketchDDD".cyan().bold(), current_version);
+    }
+
+    // TODO: Implement actual version check from registry/GitHub
+    println!("{} Checking for updates...", "→".blue());
+
+    // Simulated check - in real implementation, fetch from GitHub releases API
+    let latest_version = current_version; // Would be fetched from remote
+
+    if latest_version == current_version {
+        println!("{} You are running the latest version!", "✓".green().bold());
+    } else {
+        println!(
+            "{} New version {} available (current: {})",
+            "⚠".yellow().bold(),
+            latest_version,
+            current_version
+        );
+
+        if !check_only {
+            println!();
+            println!("To update, run:");
+            println!("  {} install sketchddd", "cargo".cyan());
+        }
+    }
+
+    Ok(())
+}
+
+/// Convert PascalCase to snake_case
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() + 4);
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() {
+            if i > 0 {
+                result.push('_');
+            }
+            result.push(c.to_ascii_lowercase());
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
