@@ -805,8 +805,10 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "sketchddd-codegen",
  "sketchddd-core",
  "sketchddd-parser",
+ "sketchddd-viz",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
