@@ -8,6 +8,7 @@ members = [
     "crates/sketchddd-viz",
     "crates/sketchddd-wasm",
     "crates/sketchddd-cli",
+    "crates/sketchddd-lsp",
 ]
 
 [workspace.package]
