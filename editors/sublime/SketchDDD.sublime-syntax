@@ -1,0 +1,247 @@
+%YAML 1.2
+---
+name: SketchDDD
+file_extensions:
+  - sddd
+scope: source.sketchddd
+
+contexts:
+  main:
+    - include: comments
+    - include: context
+    - include: map
+    - include: keywords
+    - include: types
+    - include: strings
+    - include: numbers
+    - include: operators
+
+  comments:
+    - match: //.*$
+      scope: comment.line.double-slash.sketchddd
+    - match: /\*
+      scope: punctuation.definition.comment.begin.sketchddd
+      push:
+        - meta_scope: comment.block.sketchddd
+        - match: \*/
+          scope: punctuation.definition.comment.end.sketchddd
+          pop: true
+
+  context:
+    - match: \b(context)\s+([A-Z][a-zA-Z0-9]*)\s*\{
+      captures:
+        1: keyword.control.context.sketchddd
+        2: entity.name.type.context.sketchddd
+      push:
+        - meta_scope: meta.context.sketchddd
+        - match: \}
+          pop: true
+        - include: comments
+        - include: entity
+        - include: value
+        - include: enum
+        - include: aggregate
+        - include: morphisms
+        - include: types
+        - include: operators
+
+  entity:
+    - match: \b(entity)\s+([A-Z][a-zA-Z0-9]*)\s*\{
+      captures:
+        1: keyword.control.entity.sketchddd
+        2: entity.name.type.entity.sketchddd
+      push:
+        - meta_scope: meta.entity.sketchddd
+        - match: \}
+          pop: true
+        - include: comments
+        - include: field
+        - include: types
+
+  value:
+    - match: \b(value)\s+([A-Z][a-zA-Z0-9]*)\s*\{
+      captures:
+        1: keyword.control.value.sketchddd
+        2: entity.name.type.value.sketchddd
+      push:
+        - meta_scope: meta.value.sketchddd
+        - match: \}
+          pop: true
+        - include: comments
+        - include: field
+        - include: types
+
+  enum:
+    - match: \b(enum)\s+([A-Z][a-zA-Z0-9]*)\s*=
+      captures:
+        1: keyword.control.enum.sketchddd
+        2: entity.name.type.enum.sketchddd
+      push:
+        - meta_scope: meta.enum.sketchddd
+        - match: $
+          pop: true
+        - match: \b([A-Z][a-zA-Z0-9]*)\b
+          scope: variable.other.enummember.sketchddd
+        - match: \|
+          scope: keyword.operator.pipe.sketchddd
+    - match: \b(enum)\s+([A-Z][a-zA-Z0-9]*)\s*\{
+      captures:
+        1: keyword.control.enum.sketchddd
+        2: entity.name.type.enum.sketchddd
+      push:
+        - meta_scope: meta.enum.sketchddd
+        - match: \}
+          pop: true
+        - include: comments
+        - include: enum-variant
+        - include: field
+        - include: types
+
+  enum-variant:
+    - match: \b([A-Z][a-zA-Z0-9]*)\s*\{
+      captures:
+        1: variable.other.enummember.sketchddd
+      push:
+        - match: \}
+          pop: true
+        - include: comments
+        - include: field
+        - include: types
+    - match: \b([A-Z][a-zA-Z0-9]*)\b
+      scope: variable.other.enummember.sketchddd
+
+  aggregate:
+    - match: \b(aggregate)\s+([A-Z][a-zA-Z0-9]*)\s*\{
+      captures:
+        1: keyword.control.aggregate.sketchddd
+        2: entity.name.type.aggregate.sketchddd
+      push:
+        - meta_scope: meta.aggregate.sketchddd
+        - match: \}
+          pop: true
+        - include: comments
+        - match: \b(root|contains|invariant)\b
+          scope: keyword.other.aggregate.sketchddd
+        - include: types
+        - include: operators
+
+  morphisms:
+    - match: \b(morphisms)\s*\{
+      captures:
+        1: keyword.control.morphisms.sketchddd
+      push:
+        - meta_scope: meta.morphisms.sketchddd
+        - match: \}
+          pop: true
+        - include: comments
+        - include: morphism
+        - include: annotations
+
+  morphism:
+    - match: ([a-z][a-zA-Z0-9]*)\s*:\s*([A-Z][a-zA-Z0-9]*)\s*(->)\s*([A-Z][a-zA-Z0-9<>,\s]*)
+      captures:
+        1: entity.name.function.morphism.sketchddd
+        2: entity.name.type.sketchddd
+        3: keyword.operator.arrow.sketchddd
+        4: entity.name.type.sketchddd
+
+  map:
+    - match: \b(map)\s+([A-Z][a-zA-Z0-9]*)\s*:\s*([A-Z][a-zA-Z0-9]*)\s*(->)\s*([A-Z][a-zA-Z0-9]*)\s*\{
+      captures:
+        1: keyword.control.map.sketchddd
+        2: entity.name.type.map.sketchddd
+        3: entity.name.type.context.sketchddd
+        4: keyword.operator.arrow.sketchddd
+        5: entity.name.type.context.sketchddd
+      push:
+        - meta_scope: meta.map.sketchddd
+        - match: \}
+          pop: true
+        - include: comments
+        - include: map-keywords
+        - include: mappings
+        - include: types
+
+  map-keywords:
+    - match: \b(pattern)\b
+      scope: keyword.other.pattern.sketchddd
+    - match: \b(CustomerSupplier|AntiCorruptionLayer|OpenHostService|Conformist|SharedKernel|Partnership)\b
+      scope: constant.language.pattern.sketchddd
+
+  mappings:
+    - match: \b(mappings)\s*\{
+      captures:
+        1: keyword.control.mappings.sketchddd
+      push:
+        - meta_scope: meta.mappings.sketchddd
+        - match: \}
+          pop: true
+        - include: comments
+        - include: mapping
+
+  mapping:
+    - match: ([A-Z][a-zA-Z0-9]*)\s*(->)\s*([A-Z][a-zA-Z0-9]*)
+      captures:
+        1: entity.name.type.sketchddd
+        2: keyword.operator.arrow.sketchddd
+        3: entity.name.type.sketchddd
+
+  field:
+    - match: ([a-z][a-zA-Z0-9_]*)\s*:\s*
+      captures:
+        1: variable.other.property.sketchddd
+      push:
+        - match: (?=,|\}|$)
+          pop: true
+        - include: types
+
+  keywords:
+    - match: \b(context|entity|value|enum|aggregate|morphisms|map|pattern|mappings|root|contains|invariant)\b
+      scope: keyword.control.sketchddd
+
+  types:
+    - match: \b(String|Int|Float|Bool|UUID|DateTime|Date|Decimal|Email)\b
+      scope: support.type.primitive.sketchddd
+    - match: \b(List|Map|Set)\b
+      scope: support.type.generic.sketchddd
+    - match: \?
+      scope: keyword.operator.optional.sketchddd
+    - match: \b([A-Z][a-zA-Z0-9]*)\b
+      scope: entity.name.type.sketchddd
+
+  strings:
+    - match: '"'
+      scope: punctuation.definition.string.begin.sketchddd
+      push:
+        - meta_scope: string.quoted.double.sketchddd
+        - match: '"'
+          scope: punctuation.definition.string.end.sketchddd
+          pop: true
+        - match: \\.
+          scope: constant.character.escape.sketchddd
+
+  numbers:
+    - match: \b[0-9]+\.[0-9]+\b
+      scope: constant.numeric.float.sketchddd
+    - match: \b[0-9]+\b
+      scope: constant.numeric.integer.sketchddd
+
+  operators:
+    - match: ->
+      scope: keyword.operator.arrow.sketchddd
+    - match: =>
+      scope: keyword.operator.fat-arrow.sketchddd
+    - match: '='
+      scope: keyword.operator.assignment.sketchddd
+    - match: \|
+      scope: keyword.operator.pipe.sketchddd
+    - match: (==|!=|<=|>=|<|>)
+      scope: keyword.operator.comparison.sketchddd
+    - match: (\+|-|\*|/|%)
+      scope: keyword.operator.arithmetic.sketchddd
+
+  annotations:
+    - match: '@([a-zA-Z][a-zA-Z0-9]*)(\([^)]*\))?'
+      captures:
+        1: entity.name.tag.annotation.sketchddd
+        2: meta.annotation.parameters.sketchddd

@@ -1,0 +1,61 @@
+{
+  "name": "sketchddd",
+  "displayName": "SketchDDD",
+  "description": "Syntax highlighting and language support for SketchDDD (.sddd files)",
+  "version": "0.1.0",
+  "publisher": "sketchddd",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ibrahimcesar/SketchDDD"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "sketchddd",
+    "ddd",
+    "domain-driven-design",
+    "category-theory",
+    "modeling"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "sketchddd",
+        "aliases": [
+          "SketchDDD",
+          "sketchddd"
+        ],
+        "extensions": [
+          ".sddd"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/sketchddd-light.png",
+          "dark": "./icons/sketchddd-dark.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sketchddd",
+        "scopeName": "source.sketchddd",
+        "path": "./syntaxes/sketchddd.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "sketchddd",
+        "path": "./snippets/sketchddd.json"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.0.0"
+  }
+}

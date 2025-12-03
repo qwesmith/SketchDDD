@@ -1,0 +1,196 @@
+{
+  "Context": {
+    "prefix": "context",
+    "body": [
+      "context ${1:ContextName} {",
+      "  $0",
+      "}"
+    ],
+    "description": "Create a new bounded context"
+  },
+  "Entity": {
+    "prefix": "entity",
+    "body": [
+      "entity ${1:EntityName} {",
+      "  id: UUID",
+      "  $0",
+      "}"
+    ],
+    "description": "Create a new entity"
+  },
+  "Value Object": {
+    "prefix": "value",
+    "body": [
+      "value ${1:ValueName} {",
+      "  $0",
+      "}"
+    ],
+    "description": "Create a new value object"
+  },
+  "Enum Simple": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:EnumName} = ${2:Variant1} | ${3:Variant2}$0"
+    ],
+    "description": "Create a simple enum"
+  },
+  "Enum with Data": {
+    "prefix": "enumdata",
+    "body": [
+      "enum ${1:EnumName} {",
+      "  ${2:Variant1} { $3 }",
+      "  ${4:Variant2}",
+      "}"
+    ],
+    "description": "Create an enum with associated data"
+  },
+  "Aggregate": {
+    "prefix": "aggregate",
+    "body": [
+      "aggregate ${1:AggregateName} {",
+      "  root: ${2:RootEntity}",
+      "  contains: [${3:ContainedEntity}]",
+      "  invariant: $0",
+      "}"
+    ],
+    "description": "Create an aggregate root"
+  },
+  "Morphisms": {
+    "prefix": "morphisms",
+    "body": [
+      "morphisms {",
+      "  ${1:name}: ${2:Source} -> ${3:Target}",
+      "  $0",
+      "}"
+    ],
+    "description": "Create morphisms block"
+  },
+  "Morphism": {
+    "prefix": "morph",
+    "body": [
+      "${1:name}: ${2:Source} -> ${3:Target}"
+    ],
+    "description": "Create a single morphism"
+  },
+  "Context Map": {
+    "prefix": "map",
+    "body": [
+      "map ${1:MapName}: ${2:SourceContext} -> ${3:TargetContext} {",
+      "  pattern: ${4|CustomerSupplier,AntiCorruptionLayer,OpenHostService,Conformist,SharedKernel,Partnership|}",
+      "  mappings {",
+      "    $0",
+      "  }",
+      "}"
+    ],
+    "description": "Create a context map"
+  },
+  "Field": {
+    "prefix": "field",
+    "body": [
+      "${1:fieldName}: ${2:Type}"
+    ],
+    "description": "Create a field"
+  },
+  "Optional Field": {
+    "prefix": "fieldopt",
+    "body": [
+      "${1:fieldName}: ${2:Type}?"
+    ],
+    "description": "Create an optional field"
+  },
+  "List Field": {
+    "prefix": "fieldlist",
+    "body": [
+      "${1:fieldName}: List<${2:Type}>"
+    ],
+    "description": "Create a list field"
+  },
+  "Map Field": {
+    "prefix": "fieldmap",
+    "body": [
+      "${1:fieldName}: Map<${2:KeyType}, ${3:ValueType}>"
+    ],
+    "description": "Create a map field"
+  },
+  "Money Value": {
+    "prefix": "money",
+    "body": [
+      "value Money {",
+      "  amount: Decimal",
+      "  currency: Currency",
+      "}",
+      "",
+      "enum Currency = USD | EUR | GBP"
+    ],
+    "description": "Create a Money value object with Currency"
+  },
+  "Address Value": {
+    "prefix": "address",
+    "body": [
+      "value Address {",
+      "  street: String",
+      "  city: String",
+      "  state: String",
+      "  zipCode: String",
+      "  country: String",
+      "}"
+    ],
+    "description": "Create an Address value object"
+  },
+  "Full Entity": {
+    "prefix": "entityfull",
+    "body": [
+      "entity ${1:EntityName} {",
+      "  id: UUID",
+      "  ${2:field1}: ${3:Type}",
+      "  createdAt: DateTime",
+      "  updatedAt: DateTime?",
+      "}"
+    ],
+    "description": "Create a full entity with timestamps"
+  },
+  "E-commerce Context": {
+    "prefix": "ecommerce",
+    "body": [
+      "context Commerce {",
+      "  entity Customer {",
+      "    id: UUID",
+      "    email: Email",
+      "    name: String",
+      "  }",
+      "",
+      "  entity Order {",
+      "    id: UUID",
+      "    orderNumber: String",
+      "    total: Money",
+      "    status: OrderStatus",
+      "  }",
+      "",
+      "  entity LineItem {",
+      "    id: UUID",
+      "    quantity: Int",
+      "    unitPrice: Money",
+      "  }",
+      "",
+      "  value Money {",
+      "    amount: Decimal",
+      "    currency: Currency",
+      "  }",
+      "",
+      "  enum OrderStatus = Pending | Confirmed | Shipped | Delivered",
+      "  enum Currency = USD | EUR | GBP",
+      "",
+      "  morphisms {",
+      "    customer: Order -> Customer",
+      "    items: Order -> List<LineItem>",
+      "  }",
+      "",
+      "  aggregate Order {",
+      "    root: Order",
+      "    contains: [LineItem]",
+      "  }",
+      "}"
+    ],
+    "description": "Create a complete e-commerce context"
+  }
+}
