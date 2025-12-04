@@ -8,13 +8,18 @@ import {
   Redo2,
   Settings,
   FileCode,
-  Play,
+  ShieldCheck,
   LayoutTemplate,
 } from 'lucide-react';
 import { useDomainStore } from '@/stores';
 import { TemplateBrowser } from '../templates';
+import { ValidationStatus } from '../validation';
 
-export function Header() {
+interface HeaderProps {
+  onValidationToggle: () => void;
+}
+
+export function Header({ onValidationToggle }: HeaderProps) {
   const { canUndo, canRedo, undo, redo, exportModel, togglePalette } = useDomainStore();
   const [showTemplateBrowser, setShowTemplateBrowser] = useState(false);
 
@@ -79,11 +84,12 @@ export function Header() {
         </button>
 
         <button
+          onClick={onValidationToggle}
           className="flex items-center gap-2 px-3 py-1.5 rounded bg-primary text-white hover:bg-primary-hover"
-          title="Validate Model"
+          title="Toggle Validation Panel"
         >
-          <Play className="w-4 h-4" />
-          <span className="text-sm">Validate</span>
+          <ShieldCheck className="w-4 h-4" />
+          <ValidationStatus />
         </button>
 
         <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2" />
