@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Menu,
   Save,
@@ -8,11 +9,14 @@ import {
   Settings,
   FileCode,
   Play,
+  LayoutTemplate,
 } from 'lucide-react';
 import { useDomainStore } from '@/stores';
+import { TemplateBrowser } from '../templates';
 
 export function Header() {
   const { canUndo, canRedo, undo, redo, exportModel, togglePalette } = useDomainStore();
+  const [showTemplateBrowser, setShowTemplateBrowser] = useState(false);
 
   const handleExport = () => {
     const sddd = exportModel();
@@ -66,6 +70,15 @@ export function Header() {
       {/* Right section */}
       <div className="flex items-center gap-2">
         <button
+          onClick={() => setShowTemplateBrowser(true)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700"
+          title="Browse Templates"
+        >
+          <LayoutTemplate className="w-4 h-4" />
+          <span className="text-sm">Templates</span>
+        </button>
+
+        <button
           className="flex items-center gap-2 px-3 py-1.5 rounded bg-primary text-white hover:bg-primary-hover"
           title="Validate Model"
         >
@@ -101,6 +114,12 @@ export function Header() {
           <Settings className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Template Browser Modal */}
+      <TemplateBrowser
+        isOpen={showTemplateBrowser}
+        onClose={() => setShowTemplateBrowser(false)}
+      />
     </header>
   );
 }
